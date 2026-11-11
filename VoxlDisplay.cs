@@ -492,12 +492,49 @@ namespace VoxlDisplay
                 }
                 if (!_resolution.Items.Contains(_resolution.Text.Trim()))
                 {
-                    MessageBox.Show(
+                    // The driver only offers the modes in its settings file. Ask before
+                    // writing a new one; the device restarts for a second.
+                    DialogResult add = MessageBox.Show(
                         "The driver does not offer " + w + "x" + h + ".\r\n\r\n" +
-                        "Available: " + string.Join(", ", Items(_resolution)) + "\r\n\r\n" +
-                        "Add the size to C:\\VirtualDisplayDriver\\vdd_settings.xml and restart the display to get it.",
-                        "Custom resolution", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
+                        "Add it to the driver's mode list? The display restarts for a second.",
+                        "Add custom resolution", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (add == DialogResult.Yes)
+                    {
+                        Status("adding " + w + "x" + h + " to the driver...", false);
+                        string problem = Display.AddMode(w, h, 60);
+                        if (problem != null)
+                        {
+                            MessageBox.Show("Could not add the mode: " + problem, "Voxl Display");
+                            return;
+                        }
+                        _resolution.Items.Clear();
+                        foreach (string m in Display.ListModes(_device)) _resolution.Items.Add(m);
+                        _resolution.Text = w + "x" + h;
+                        // The device restarted, so its GDI name and the scaling steps are
+                        // new: re-resolve before touching the display again.
+                        string refreshed = Display.FindDeviceName(MonitorTag);
+                        if (refreshed == null)
+                        {
+                            MessageBox.Show("The virtual display did not come back after the restart.", "Voxl Display");
+                            return;
+                        }
+                        _device = refreshed;
+                        _resolution.Items.Clear();
+                        foreach (string m in Display.ListModes(_device)) _resolution.Items.Add(m);
+                        _resolution.Text = w + "x" + h;
+                        Status("added " + w + "x" + h + ", applying...", false);
+                    }
+                    else
+                    {
+                        string current = Display.CurrentMode(_device);
+                        if (!Display.ParseMode(current, out w, out h))
+                        {
+                            MessageBox.Show("The display reports no usable mode.", "Voxl Display");
+                            return;
+                        }
+                        Status("keeping " + current, false);
+                        _resolution.Text = current;
+                    }
                 }
                 string r = Display.SetMode(_device, w, h, 60);
                 if (r != "ok") { Status("resolution: " + r, true); return; }
@@ -840,6 +877,31 @@ namespace VoxlDisplay
             if (!int.TryParse(s.Substring(0, x), out w)) return false;
             if (!int.TryParse(s.Substring(x + 1), out h)) return false;
             return w >= 320 && h >= 200 && w <= 8192 && h <= 8192;
+        }
+
+        // Adds a mode through the elevated helper script: the driver's settings file lives
+        // under C:\ and the device restart needs administrator rights.
+        public static string AddMode(int w, int h, int hz)
+        {
+            string script = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "add-mode.ps1");
+            if (!File.Exists(script)) return "add-mode.ps1 is missing next to the app";
+
+            var psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\" " +
+                "-Width " + w + " -Height " + h + " -Refresh " + hz);
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            try
+            {
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                return p.ExitCode == 0 ? null : "the helper exited with code " + p.ExitCode;
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
         }
 
         public static string CurrentMode(string dev)

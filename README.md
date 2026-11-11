@@ -61,6 +61,10 @@ Open **Voxl Display** from the desktop shortcut.
 Press **Start**. The status line shows the address, and **QR code** opens a scannable
 code for the tablet.
 
+Closing the window with **X** keeps the stream running: the app moves to the notification
+area. Click its icon to open the window again, or right-click it for **Stop and exit**,
+which disconnects the virtual display, stops the stream and quits.
+
 On the tablet:
 
 1. open `https://<pc-ip>:6901`, or scan the QR code,

@@ -296,6 +296,8 @@ namespace VoxlDisplay
         private readonly NotifyIcon _tray;
         private Process _voxl;
         private bool _busy;
+        private bool _quitting;
+        private bool _exitAfterWork;
         private string _device;
         private bool _syncing;
 
@@ -433,6 +435,22 @@ namespace VoxlDisplay
             _tray.Text = "Voxl Display";
             try { _tray.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); }
             catch { _tray.Icon = SystemIcons.Application; }
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Open", null, delegate { Restore(); });
+            menu.Items.Add("Stop and exit", null, delegate
+            {
+                _quitting = true;
+                _exitAfterWork = true;
+                Hide();
+                if (_busy) { Close(); return; }
+                Run(DoStop);
+            });
+            _tray.ContextMenuStrip = menu;
+            _tray.MouseClick += delegate(object s, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left) Restore();
+            };
+            _tray.DoubleClick += delegate { Restore(); };
             _tray.Visible = true;
 
             LoadDisplays();
@@ -497,7 +515,7 @@ namespace VoxlDisplay
         private void ScaleModestly()
         {
             float f = GetDpiForWindow(Handle) / 96f;
-            if (f > 1.25f) f = 1.25f;
+            if (f > 1.15f) f = 1.15f;
             if (f < 1.0f) f = 1.0f;
             if (f <= 1.001f) return;
             SuspendLayout();
@@ -792,6 +810,7 @@ namespace VoxlDisplay
             {
                 SetBusy(false);
                 if (e.Error != null) { Status(e.Error.Message, true); RefreshState(); return; }
+                if (_exitAfterWork) { Close(); return; }
                 StepResult r = (StepResult)e.Result;
                 Status(r.Message, r.Error);
                 UpdateAccess();
@@ -996,13 +1015,39 @@ namespace VoxlDisplay
         private void Status(string text, bool error)
         {
             _status.Text = text;
+            try
+            {
+                bool live = _voxl != null && !_voxl.HasExited;
+                _tray.Text = live ? "Voxl Display - streaming" : "Voxl Display - stopped";
+            }
+            catch { }
             _status.ForeColor = error ? Color.FromArgb(230, 130, 130) : Color.FromArgb(150, 150, 160);
         }
 
+        // The X hides the window and leaves the stream running; the tray icon brings it back.
         private void OnClosing(object sender, FormClosingEventArgs e)
         {
+            if (!_quitting && e.CloseReason == CloseReason.UserClosing)
+            {
+                e.Cancel = true;
+                Hide();
+                try
+                {
+                    _tray.ShowBalloonTip(2500, "Voxl Display",
+                        "Still running in the tray. Use the icon to open or stop it.", ToolTipIcon.Info);
+                }
+                catch { }
+                return;
+            }
             _tray.Visible = false;
             _tray.Dispose();
+        }
+
+        private void Restore()
+        {
+            Show();
+            if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+            Activate();
         }
 
         private static string LanAddress()

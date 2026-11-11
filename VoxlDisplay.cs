@@ -171,6 +171,9 @@ namespace VoxlDisplay
 
     internal sealed class MainForm : Form
     {
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hwnd);
+
         private const string MonitorTag = "MTT1337";
 
         private readonly Settings _s;
@@ -211,12 +214,15 @@ namespace VoxlDisplay
                 _s.VoxlPath = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "voxl.exe");
             if (string.IsNullOrEmpty(_s.Addr)) _s.Addr = LanAddress();
 
+            // WinForms keeps resetting AutoScaleDimensions to the live DPI, which shrinks a
+            // form laid out in 96 dpi units. Scaling is done by hand instead, from the
+            // window's real DPI once it exists.
             AutoScaleMode = AutoScaleMode.None;
             Text = "Voxl Display - second monitor";
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(640, 762);
+            ClientSize = new Size(640, 742);
             BackColor = Color.FromArgb(23, 23, 27);
             ForeColor = Color.FromArgb(235, 235, 240);
             Font = new Font("Segoe UI", 9.75f);
@@ -325,7 +331,7 @@ namespace VoxlDisplay
 
             _hint.Text = "";
             _hint.Location = new Point(26, 690);
-            _hint.Size = new Size(360, 64);
+            _hint.Size = new Size(360, 40);
             _hint.ForeColor = Color.FromArgb(110, 110, 120);
             Controls.Add(_hint);
             _tray = new NotifyIcon();
@@ -382,14 +388,33 @@ namespace VoxlDisplay
             n.ValueChanged += delegate { if (!_syncing) _quality.SelectedItem = "Custom"; };
         }
 
+        private bool _scaled;
+
+        // The window is laid out in 96 dpi units. DeviceDpi is only correct once the
+        // handle exists, so the one-time scale happens here; doing it in the constructor
+        // left the window at 1:1 while the fonts grew with the DPI, which is what made
+        // every row look crammed.
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (_scaled) return;
+            _scaled = true;
+            float f = GetDpiForWindow(Handle) / 96f;
+            if (f <= 1.05f) return;
+            SuspendLayout();
+            Scale(new SizeF(f, f));
+            ClientSize = new Size((int)(640 * f), (int)(742 * f));
+            ResumeLayout(true);
+        }
+
         private void ScaleToDpi()
         {
             if (DeviceDpi > 96)
             {
-                float f = DeviceDpi / 96f;
+                float f = GetDpiForWindow(Handle) / 96f;
                 SuspendLayout();
                 Scale(new SizeF(f, f));
-                ClientSize = new Size((int)(640 * f), (int)(762 * f));
+                ClientSize = new Size((int)(640 * f), (int)(742 * f));
                 ResumeLayout(true);
             }
             if (!File.Exists(_s.VoxlPath))

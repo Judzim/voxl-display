@@ -1,4 +1,4 @@
-# Switches the virtual display device on or off. The app calls this when it is not
+﻿# Switches the virtual display device on or off. The app calls this when it is not
 # running elevated; pnputil needs administrator rights.
 #
 #   .\switch-device.ps1 -State off
@@ -21,6 +21,8 @@ if (-not $device) {
 
 $verb = if ($State -eq "on") { "/enable-device" } else { "/disable-device" }
 $out = & pnputil $verb "$($device.InstanceId)" 2>&1 | Out-String
+$log = Join-Path $PSScriptRoot "device-switch.log"
+"$(Get-Date -Format o)  $State  $($device.InstanceId)`r`n$($out.Trim())" | Out-File -FilePath $log -Append -Encoding utf8
 Write-Host $out.Trim()
 
 if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -30,8 +32,8 @@ exit 0
 # SIG # Begin signature block
 # MIIHYwYJKoZIhvcNAQcCoIIHVDCCB1ACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBiSRhL0zCnCpmW
-# 3g5gJ0KirA/DF44Dc5tmSS0xBo7JraCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCD/R+T1a4Q27Yo/
+# EAXe/OLdd48zhr00zHXp0t0UmBE7W6CCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
 # o08oGq2g8HmKMA0GCSqGSIb3DQEBCwUAMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQK
 # DAxWb3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbTAeFw0yNjExMTExNzIwMzRa
 # Fw0zNjExMTExNzMwMzRaMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQKDAxWb3hsIERp
@@ -58,14 +60,14 @@ exit 0
 # b3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbQIQLwynnK9BBqNPKBqtoPB5ijAN
 # BglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqG
 # SIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3
-# AgEVMC8GCSqGSIb3DQEJBDEiBCClNgQ4patWbLt4h1U9Yw1pINJAVzvD97/E0NIQ
-# Gyz+rzANBgkqhkiG9w0BAQEFAASCAYByIrfFS7Oc1qZFRDTaWA/Kw/b0w+D/myyx
-# 7tWOu1WkGLOWuJuhAuGgQH+OyUFjCXcUrb2INGmvTDYmC3IneKnHEUsE4l7SkOQx
-# aWU+pYIYTvBeTCVjBfFdDtFBTkpnA57f7wxR+mKP8q8P014iUqdcezdpjOZtIDp5
-# yTHbs4fX4L8apvP5iKb/sFdkfWaiAvztPBKZOnMi7ijVDaZwlMETcGpcMgUMj5Mj
-# enoJ7a0bGI3r0fj2jAZp7yRABG9ar4l+eBIL4UJnfQlJ2jHrAvMMxw0DlxqT1xzJ
-# wlj6Rns2fp4T3OQeLhCsPjRBlA/C5DUFqr79qo0GzcmUmlgJ5Uu8l68cUieSE25X
-# Mi2SFSMq7RffQpSKCYbzt6xfxnf8kD5uKw5vNBEIB7u14fwZLa1PWh8xuLML9754
-# gz9ocp1QEufyCZSZlT6e8GoAhxUISIyBTV+2SdGye5V7uAVfmQTGE6/1gYr1pz+S
-# fR7nfB1mOahH1fMpF8RW+IF0uXnnwtw=
+# AgEVMC8GCSqGSIb3DQEJBDEiBCA8WZF6y6rW4CqshRBfAmNmwPPNmCGDzwn5AN+u
+# CB98jzANBgkqhkiG9w0BAQEFAASCAYB0MU7fVu+XyO+qKMKwhq+YvbuAxjeWfTyw
+# hJMlPoUZJMLVfQbMzdikZTQsUiiTU+UKTBMoB34drGeYvzlHHz9eyM7t09vm/7b0
+# 9T5fMILQumHe1UD+cj64O7eJQ5IHaWvG3+IpxmughvYdP/lGWRZBGOB3Y6i+FOuE
+# GX7fy8jlJkMDq95d7fOzENqCPJgxL0woD4uJcjMRdo4B5m6jyA/+f+xghvoOIigp
+# fcNHpR5TxzrhEzlGSTR2Z8vCbmaq1dClRG0NCGBg8hNu8ZxKLpJgN+rpJMiV2DXA
+# F2si3BXz8UxYgQb03js/IkBfE/RLsKHZ01ORLwGfCgHT73ytlW4yOTp1s2vwr+8V
+# bCr4q24A4Qj/uqtbDl7VBwJCe9xu/Y+I682lez1Lzr3lxP/P4uPpGa3KOx974f1d
+# WUrAZHLXLzfnJzQUiWIjkMzQq500AFptgCsCu4PSwh3G2IR7u2lhBW+ciKywgGgp
+# EWjf9FmexHElXAY9ou5XPwx5QArVXCs=
 # SIG # End signature block

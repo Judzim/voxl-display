@@ -702,6 +702,10 @@ namespace VoxlDisplay
             if (!Display.ParseMode(req.Resolution, out w, out h))
                 return StepResult.Fail("the resolution must look like 2560x1600");
 
+            // 0. The layout as it is now, before enabling anything. Windows re-arranges all
+            //    screens when an indirect display appears, and this is what gets put back.
+            List<Display.Snapshot> before = Display.TakeSnapshot();
+
             // 1. The monitor may be switched off from an earlier Stop.
             if (Display.FindDeviceName(MonitorTag) == null)
             {
@@ -712,8 +716,6 @@ namespace VoxlDisplay
             string device = Display.FindDeviceName(MonitorTag);
             if (device == null) return StepResult.Fail("the display is not attached");
 
-            // 2. Whatever Windows does to the other monitors is undone at the end.
-            List<Display.Snapshot> before = Display.TakeSnapshot();
 
             // 3. The mode: the driver only offers what is in its settings file.
             bool offered = Display.ModeOffered(device, w, h, 60);
@@ -772,7 +774,7 @@ namespace VoxlDisplay
         {
             KillVoxl();
             string switched = Display.SetDeviceEnabled(false);
-            if (!Display.WaitForAttached(false, 8))
+            if (!Display.WaitForAttached(false, 20))
                 return StepResult.Fail("stopped, but the display is still attached (" + switched + ")");
             return StepResult.Ok("stopped, the virtual display is disconnected");
         }
@@ -1300,42 +1302,11 @@ namespace VoxlDisplay
 
         public static string SetDeviceEnabled(bool on)
         {
-            var dev = new List<PnpDevice>();
-            // (System.Management is referenced below)
-            foreach (System.Management.ManagementObject o in new System.Management.ManagementObjectSearcher(
-                "SELECT * FROM Win32_PnPEntity WHERE Name LIKE '%Virtual Display Driver%'").Get())
-            {
-                dev.Add(new PnpDevice { Id = (string)o["DeviceID"], Name = (string)o["Name"] });
-            }
-            if (dev.Count == 0) return "the virtual display device was not found";
-
-            foreach (var d in dev)
-            {
-                var psi = new ProcessStartInfo("pnputil.exe", (on ? "/enable-device \"" : "/disable-device \"") + d.Id + "\"");
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
-                psi.RedirectStandardOutput = true;
-                psi.RedirectStandardError = true;
-                try
-                {
-                    Process p = Process.Start(psi);
-                    p.WaitForExit();
-                    if (p.ExitCode != 0)
-                    {
-                        // Not elevated: ask for administrator rights for this one action.
-                        return SetDeviceEnabledElevated(on);
-                    }
-                }
-                catch (Exception e)
-                {
-                    return e.Message;
-                }
-            }
-            System.Threading.Thread.Sleep(on ? 2500 : 1200);
-            return "ok";
+            // One code path only: the helper that install.ps1 ships. When the app already
+            // runs elevated it does not prompt, otherwise it asks once. The helper writes
+            // device-switch.log, so a failure can be read instead of guessed.
+            return SetDeviceEnabledElevated(on);
         }
-
-        private sealed class PnpDevice { public string Id; public string Name; }
 
         // One UAC prompt, then the helper script does the same pnputil call.
         private static string SetDeviceEnabledElevated(bool on)

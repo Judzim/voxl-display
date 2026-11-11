@@ -1,0 +1,14 @@
+# Machine specific, never in git
+settings.json
+voxl.log
+*.log
+*.pid
+
+# Build outputs and binaries: releases carry them, git carries the source
+*.exe
+obj/
+bin/
+
+# Local test captures
+*.png
+!docs/screenshot.png

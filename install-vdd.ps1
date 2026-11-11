@@ -34,12 +34,12 @@ New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
 function Get-Package([string]$name, [string]$url) {
     $local = if ($VendorDir) { Join-Path $VendorDir $name } else { "" }
     if ($local -and (Test-Path $local)) {
-        "using bundled $name"
+        Write-Host "  using bundled $name"
         return $local
     }
     $cached = Join-Path $WorkDir $name
-    if (Test-Path $cached) { "using cached $name"; return $cached }
-    "downloading $name"
+    if (Test-Path $cached) { Write-Host "  using cached $name"; return $cached }
+    Write-Host "  downloading $name"
     Invoke-WebRequest -Uri $url -OutFile $cached -UseBasicParsing
     return $cached
 }

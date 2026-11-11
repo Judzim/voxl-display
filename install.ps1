@@ -69,7 +69,8 @@ if ($monitor) {
     if (-not (Test-Path $driverScript)) { $driverScript = Join-Path (Split-Path $Source -Parent) "install-vdd.ps1" }
     if (-not (Test-Path $driverScript)) { throw "install-vdd.ps1 is missing next to install.ps1" }
     Write-Step "installing the virtual display driver (a few seconds)"
-    & $driverScript -VendorDir (Join-Path $Source "vendor") | Out-Null
+    & $driverScript -VendorDir (Join-Path $Source "vendor")
+    if (-not $?) { throw "the virtual display driver did not install, see the messages above" }
 }
 
 # 3. Firewall: the app is reachable from the LAN only, never from the internet.

@@ -169,6 +169,62 @@ namespace VoxlDisplay
         }
     }
 
+    // The stock CheckBox centres a line box, and a caption with a descender ("Clipboard")
+    // then looks lower than its square. This draws both around the same centre.
+    internal sealed class FlatCheck : CheckBox
+    {
+        public FlatCheck()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            FlatStyle = FlatStyle.Flat;
+            AutoSize = false;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(BackColor);
+
+            float u = DeviceDpi / 96f;
+            int box = (int)Math.Round(16 * u);
+            int gap = (int)Math.Round(10 * u);
+            int left = (int)Math.Round(2 * u);
+
+            Size text = TextRenderer.MeasureText(Text, Font);
+            // one centre for both: the checkbox square and the caption glyphs
+            int centre = ClientSize.Height / 2 + (int)Math.Round(1 * u);
+            var square = new Rectangle(left, centre - box / 2, box, box);
+
+            using (var fill = new SolidBrush(Checked ? Color.FromArgb(58, 158, 96) : Color.FromArgb(30, 30, 38)))
+            using (var border = new Pen(Checked ? Color.FromArgb(74, 178, 112) : Color.FromArgb(96, 96, 108)))
+            {
+                g.FillRectangle(fill, square);
+                g.DrawRectangle(border, square);
+            }
+
+            if (Checked)
+            {
+                using (var tick = new Pen(Color.White, Math.Max(2f, box / 7f)))
+                {
+                    tick.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                    tick.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                    float x = square.Left, y = square.Top, s = box;
+                    g.DrawLines(tick, new[]
+                    {
+                        new PointF(x + s * 0.24f, y + s * 0.52f),
+                        new PointF(x + s * 0.42f, y + s * 0.70f),
+                        new PointF(x + s * 0.76f, y + s * 0.30f),
+                    });
+                }
+            }
+
+            var area = new Rectangle(square.Right + gap, 0,
+                Math.Max(0, ClientSize.Width - square.Right - gap), ClientSize.Height);
+            TextRenderer.DrawText(g, Text, Font, area, ForeColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
     internal sealed class MainForm : Form
     {
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -185,9 +241,9 @@ namespace VoxlDisplay
         private readonly NumericUpDown _maxMbps = new NumericUpDown();
         private readonly NumericUpDown _crf = new NumericUpDown();
         private readonly NumericUpDown _threads = new NumericUpDown();
-        private readonly CheckBox _clipboard = new CheckBox();
-        private readonly CheckBox _audio = new CheckBox();
-        private readonly CheckBox _readOnly = new CheckBox();
+        private readonly CheckBox _clipboard = new FlatCheck();
+        private readonly CheckBox _audio = new FlatCheck();
+        private readonly CheckBox _readOnly = new FlatCheck();
         private readonly TextBox _password = new TextBox();
         private readonly Label _status = new Label();
         private readonly Label _hint = new Label();
@@ -357,7 +413,8 @@ namespace VoxlDisplay
             b.ForeColor = Color.White;
             b.FlatAppearance.BorderSize = 0;
             b.TextAlign = ContentAlignment.MiddleCenter;
-            b.Padding = new Padding(0, 0, 0, 0);
+            // native flat buttons draw the caption a touch high; nudge it to the middle
+            b.Padding = new Padding(0, (int)Math.Round(8 * DeviceDpi / 96.0), 0, 0);
             b.UseVisualStyleBackColor = false;
             Controls.Add(b);
         }

@@ -216,7 +216,7 @@ namespace VoxlDisplay
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(640, 724);
+            ClientSize = new Size(640, 762);
             BackColor = Color.FromArgb(23, 23, 27);
             ForeColor = Color.FromArgb(235, 235, 240);
             Font = new Font("Segoe UI", 9.75f);
@@ -225,104 +225,107 @@ namespace VoxlDisplay
             title.Text = "Second monitor for your tablet";
             title.Font = new Font("Segoe UI Semibold", 15f);
             title.AutoSize = true;
-            title.Location = new Point(26, 18);
+            title.Location = new Point(26, 16);
             Controls.Add(title);
 
             var sub = new Label();
             sub.Text = "Virtual display plus the voxl stream, LAN only.";
             sub.ForeColor = Color.FromArgb(140, 140, 150);
             sub.AutoSize = true;
-            sub.Location = new Point(28, 54);
+            sub.Location = new Point(28, 52);
             Controls.Add(sub);
 
-            Section("Display", 92);
+            // Every section: heading, its line, then 30 px to the first label and 30 to
+            // its field. The same rhythm everywhere is what stops it looking crammed.
+            Section("Display", 88);
 
-            AddLabel("Resolution", 26, 116);
-            Combo(_resolution, 26, 142, 260);
+            AddLabel("Resolution", 26, 120);
+            Combo(_resolution, 26, 152, 260);
             _resolution.DropDownStyle = ComboBoxStyle.DropDown;
             Controls.Add(_resolution);
 
-            AddLabel("Scaling", 306, 116);
-            Combo(_scale, 306, 142, 260);
+            AddLabel("Scaling", 306, 120);
+            Combo(_scale, 306, 152, 260);
             Controls.Add(_scale);
 
-            Section("Stream", 196);
+            Section("Stream", 206);
 
-            AddLabel("Quality", 26, 220);
-            Combo(_quality, 26, 246, 260);
+            AddLabel("Quality", 26, 238);
+            Combo(_quality, 26, 270, 260);
             foreach (string q in QualityNames) _quality.Items.Add(q);
             _quality.SelectedIndexChanged += QualityChanged;
             Controls.Add(_quality);
 
-            AddLabel("Encoder preset (latency)", 306, 220);
-            Combo(_preset, 306, 246, 260);
+            AddLabel("Encoder preset (latency)", 306, 238);
+            Combo(_preset, 306, 270, 260);
             foreach (string p in PresetNames) _preset.Items.Add(p);
             Controls.Add(_preset);
 
-            AddLabel("CRF", 26, 292);
-            Number(_crf, 26, 318, 110, 10, 40);
+            AddLabel("CRF", 26, 322);
+            Number(_crf, 26, 354, 110, 10, 40);
             Controls.Add(_crf);
 
-            AddLabel("Max Mbps", 156, 292);
-            Number(_maxMbps, 156, 318, 130, 5, 2000);
+            AddLabel("Max Mbps", 156, 322);
+            Number(_maxMbps, 156, 354, 130, 5, 2000);
             Controls.Add(_maxMbps);
 
-            AddLabel("FPS", 306, 292);
-            Combo(_fps, 306, 318, 110);
+            AddLabel("FPS", 306, 322);
+            Combo(_fps, 306, 354, 110);
             foreach (int f in new[] { 30, 50, 60, 90, 120 }) _fps.Items.Add(f.ToString());
             Controls.Add(_fps);
 
-            AddLabel("Threads", 436, 292);
-            Number(_threads, 436, 318, 130, 1, 32);
+            AddLabel("Threads", 436, 322);
+            Number(_threads, 436, 354, 130, 1, 32);
             Controls.Add(_threads);
 
-            Check(_clipboard, "Clipboard", 26, 372, 132);
-            Check(_audio, "Audio", 176, 372, 96);
-            Check(_readOnly, "Read-only viewer", 290, 372, 190);
+            Check(_clipboard, "Clipboard", 26, 410, 132);
+            Check(_audio, "Audio", 176, 410, 96);
+            Check(_readOnly, "Read-only viewer", 290, 410, 190);
 
-            Section("Access", 416);
+            Section("Access", 462);
 
-            AddLabel("Password (type it on the tablet)", 26, 440);
-            _password.Location = new Point(26, 466);
+            AddLabel("Password (type it on the tablet)", 26, 494);
+            _password.Location = new Point(26, 526);
             _password.Size = new Size(294, 26);
             _password.BackColor = Color.FromArgb(35, 35, 42);
             _password.ForeColor = Color.White;
             _password.BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(_password);
 
-            Button(_qr, "QR code", 336, 464, Color.FromArgb(48, 48, 58), 124);
+            Button(_qr, "QR code", 336, 524, Color.FromArgb(48, 48, 58), 124);
             _qr.Click += QrClicked;
-            Button(_copy, "Copy link", 470, 464, Color.FromArgb(48, 48, 58), 124);
+            Button(_copy, "Copy link", 470, 524, Color.FromArgb(48, 48, 58), 124);
             _copy.Click += CopyClicked;
 
             var who = new Label();
             who.Text = "Username: any (leave it empty or type anything)";
             who.AutoSize = true;
-            who.Location = new Point(28, 500);
+            who.Location = new Point(28, 566);
             who.ForeColor = Color.FromArgb(120, 160, 140);
             Controls.Add(who);
 
-            Button(_start, "Start", 26, 540, Color.FromArgb(58, 158, 96), 132);
+            Button(_start, "Start", 26, 606, Color.FromArgb(58, 158, 96), 132);
             _start.Click += StartClicked;
-            Button(_stop, "Stop", 168, 540, Color.FromArgb(48, 48, 58), 132);
+            Button(_stop, "Stop", 168, 606, Color.FromArgb(48, 48, 58), 132);
             _stop.Click += StopClicked;
-            Button(_reset, "Defaults", 310, 540, Color.FromArgb(48, 48, 58), 132);
+            Button(_reset, "Defaults", 310, 606, Color.FromArgb(48, 48, 58), 132);
             _reset.Click += ResetClicked;
-            Button(_reload, "Reload", 452, 540, Color.FromArgb(48, 48, 58), 132);
+            Button(_reload, "Reload", 452, 606, Color.FromArgb(48, 48, 58), 132);
             _reload.Click += delegate { LoadDisplays(); ApplySettings(); };
 
-            Button(_install, "Install driver", 26, 594, Color.FromArgb(58, 158, 96), 170);
+            Button(_install, "Install driver", 400, 686, Color.FromArgb(58, 158, 96), 184);
+            _install.Size = new Size(184, 32);
             _install.Click += InstallDriverClicked;
 
             _status.Text = "stopped";
-            _status.Location = new Point(26, 640);
+            _status.Location = new Point(26, 664);
             _status.Size = new Size(560, 22);
             _status.ForeColor = Color.FromArgb(150, 150, 160);
             Controls.Add(_status);
 
             _hint.Text = "";
-            _hint.Location = new Point(26, 664);
-            _hint.Size = new Size(560, 44);
+            _hint.Location = new Point(26, 690);
+            _hint.Size = new Size(360, 64);
             _hint.ForeColor = Color.FromArgb(110, 110, 120);
             Controls.Add(_hint);
             _tray = new NotifyIcon();
@@ -347,6 +350,9 @@ namespace VoxlDisplay
             b.BackColor = back;
             b.ForeColor = Color.White;
             b.FlatAppearance.BorderSize = 0;
+            b.TextAlign = ContentAlignment.MiddleCenter;
+            b.Padding = new Padding(0, 0, 0, 0);
+            b.UseVisualStyleBackColor = false;
             Controls.Add(b);
         }
 
@@ -357,6 +363,9 @@ namespace VoxlDisplay
             c.Location = new Point(x, y);
             c.Size = new Size(width, 26);
             c.AutoSize = false;
+            c.TextAlign = ContentAlignment.MiddleLeft;
+            c.CheckAlign = ContentAlignment.MiddleLeft;
+            c.Padding = new Padding(0, 0, 0, 0);
             c.ForeColor = Color.FromArgb(200, 200, 210);
             Controls.Add(c);
         }
@@ -380,7 +389,7 @@ namespace VoxlDisplay
                 float f = DeviceDpi / 96f;
                 SuspendLayout();
                 Scale(new SizeF(f, f));
-                ClientSize = new Size((int)(640 * f), (int)(724 * f));
+                ClientSize = new Size((int)(640 * f), (int)(762 * f));
                 ResumeLayout(true);
             }
             if (!File.Exists(_s.VoxlPath))

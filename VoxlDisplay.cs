@@ -174,6 +174,8 @@ namespace VoxlDisplay
         private readonly Button _copy = new Button();
         private readonly Button _qr = new Button();
         private readonly Button _reset = new Button();
+        private readonly Button _reload = new Button();
+        private readonly Button _install = new Button();
         private readonly NotifyIcon _tray;
         private Process _voxl;
         private bool _busy;
@@ -195,7 +197,7 @@ namespace VoxlDisplay
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(640, 672);
+            ClientSize = new Size(640, 644);
             BackColor = Color.FromArgb(23, 23, 27);
             ForeColor = Color.FromArgb(235, 235, 240);
             Font = new Font("Segoe UI", 9.75f);
@@ -225,6 +227,7 @@ namespace VoxlDisplay
 
             AddLabel("Stream quality", 26, 156);
             Combo(_quality, 26, 176, 220);
+            foreach (string q in QualityNames) _quality.Items.Add(q);
             _quality.SelectedIndexChanged += QualityChanged;
             Controls.Add(_quality);
 
@@ -289,10 +292,15 @@ namespace VoxlDisplay
             Controls.Add(_status);
 
             _hint.Text = "";
-            _hint.Location = new Point(26, 538);
-            _hint.Size = new Size(560, 60);
+            _hint.Location = new Point(26, 536);
+            _hint.Size = new Size(560, 40);
             _hint.ForeColor = Color.FromArgb(110, 110, 120);
             Controls.Add(_hint);
+
+            Button(_reload, "Reload displays", 26, 582, Color.FromArgb(48, 48, 58), 170);
+            _reload.Click += delegate { LoadDisplays(); ApplySettings(); };
+            Button(_install, "Install driver", 206, 582, Color.FromArgb(58, 158, 96), 170);
+            _install.Click += InstallDriverClicked;
 
             _tray = new NotifyIcon();
             _tray.Text = "Voxl Display";
@@ -346,7 +354,7 @@ namespace VoxlDisplay
                 float f = DeviceDpi / 96f;
                 SuspendLayout();
                 Scale(new SizeF(f, f));
-                ClientSize = new Size((int)(640 * f), (int)(672 * f));
+                ClientSize = new Size((int)(640 * f), (int)(644 * f));
                 ResumeLayout(true);
             }
             if (!File.Exists(_s.VoxlPath))
@@ -390,12 +398,22 @@ namespace VoxlDisplay
         private void LoadDisplays()
         {
             _device = Display.FindDeviceName(MonitorTag);
+            _resolution.Items.Clear();
+            _scale.Items.Clear();
+
             if (_device == null)
             {
-                _status.Text = "Virtual display not found. Is the driver installed?";
+                // The stream settings still work without a display, so only the two lists
+                // that come from the driver stay empty, and the window says why.
+                _status.Text = "The virtual display is not attached.";
                 _status.ForeColor = Color.FromArgb(220, 120, 120);
+                _hint.Text =
+                    "The driver is missing or was refused. Press Install driver; if that fails, " +
+                    "run diagnose.ps1 next to the app and send the output.";
+                _install.Visible = true;
                 return;
             }
+
             foreach (string m in Display.ListModes(_device)) _resolution.Items.Add(m);
             int min, cur, max;
             Display.GetScaleRange(MonitorTag, out min, out cur, out max);
@@ -404,7 +422,50 @@ namespace VoxlDisplay
                 int pct = Display.ScalePercentFor(MonitorTag, i);
                 if (pct > 0) _scale.Items.Add(pct + "%");
             }
-            foreach (string q in QualityNames) _quality.Items.Add(q);
+            _hint.Text = "Display " + _device + " is ready.";
+            _install.Visible = false;
+        }
+
+        // Runs the driver install that ships next to the app, so a machine where it failed
+        // can be repaired without finding the zip again.
+        private void InstallDriverClicked(object sender, EventArgs e)
+        {
+            string script = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "install-vdd.ps1");
+            string vendor = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "vendor");
+            string settings = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "vdd_settings.xml");
+            if (!File.Exists(script))
+            {
+                MessageBox.Show("install-vdd.ps1 is missing next to the app. Run install.cmd from the release zip.",
+                    "Voxl Display");
+                return;
+            }
+
+            Status("installing the virtual display driver...", false);
+            var psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\" " +
+                "-VendorDir \"" + vendor + "\"" + (File.Exists(settings) ? " -Settings \"" + settings + "\"" : ""));
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            try
+            {
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                if (p.ExitCode != 0)
+                {
+                    Status("the driver install failed (exit code " + p.ExitCode + ")", true);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Status("the driver install was not started: " + ex.Message, true);
+                return;
+            }
+
+            LoadDisplays();
+            ApplySettings();
+            if (_device != null) Status("driver installed, display " + _device + " is ready", false);
         }
 
         private void ApplySettings()

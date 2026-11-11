@@ -49,11 +49,23 @@ Write-Host "Installing Voxl Display" -ForegroundColor White
 
 # 1. Files.
 if (-not (Test-Path $Target)) { New-Item -ItemType Directory -Path $Target -Force | Out-Null }
-foreach ($f in @("VoxlDisplay.exe", "voxl.exe")) {
+foreach ($f in @("VoxlDisplay.exe", "voxl.exe", "voxl.ico", "vdd_settings.xml",
+                 "install-vdd.ps1", "uninstall-vdd.ps1", "add-mode.ps1", "diagnose.ps1", "trust.ps1")) {
     $src = Join-Path $Source $f
-    if (-not (Test-Path $src)) { throw "$f is missing next to install.ps1" }
-    Copy-Item $src (Join-Path $Target $f) -Force
-    Write-Step "copied $f"
+    if (Test-Path $src) {
+        Copy-Item $src (Join-Path $Target $f) -Force
+        Write-Step "copied $f"
+    } elseif ($f -eq "VoxlDisplay.exe" -or $f -eq "voxl.exe") {
+        throw "$f is missing next to install.ps1"
+    }
+}
+# The installed app repairs and extends itself, so the packages travel with it.
+foreach ($dir in @("vendor", "signing")) {
+    $src = Join-Path $Source $dir
+    if (Test-Path $src) {
+        Copy-Item $src (Join-Path $Target $dir) -Recurse -Force
+        Write-Step "copied $dir\"
+    }
 }
 
 # 2. Virtual display driver: only when the monitor is not there yet.
@@ -83,11 +95,7 @@ New-NetFirewallRule -DisplayName "voxl 6901 (LAN)" -Direction Inbound -Action Al
     -Program (Join-Path $Target "voxl.exe") | Out-Null
 Write-Step "firewall rule set for $Target\voxl.exe (LAN only)"
 
-# 4. Context icon, before the shortcuts point at it.
-$icon = Join-Path $Source "voxl.ico"
-if (Test-Path $icon) { Copy-Item $icon (Join-Path $Target "voxl.ico") -Force }
-
-# 5. Shortcuts.
+# 4. Shortcuts.
 $ws = New-Object -ComObject WScript.Shell
 foreach ($dir in @($desktop, $startMenu)) {
     $link = $ws.CreateShortcut((Join-Path $dir $shortcutName))
@@ -107,8 +115,8 @@ Write-Host "The password is in the app; the tablet opens https://<this-PC-IP>:69
 # SIG # Begin signature block
 # MIIHYwYJKoZIhvcNAQcCoIIHVDCCB1ACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBrWebBnnS3UNq5
-# CnzgcshuW/z5tFNJXjId1TKjdVUQPKCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCC/V0o7dUdqPhM4
+# yyjkIMd47mOlqhPo6ujHQSN3bRJH1qCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
 # o08oGq2g8HmKMA0GCSqGSIb3DQEBCwUAMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQK
 # DAxWb3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbTAeFw0yNjExMTExNzIwMzRa
 # Fw0zNjExMTExNzMwMzRaMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQKDAxWb3hsIERp
@@ -135,14 +143,14 @@ Write-Host "The password is in the app; the tablet opens https://<this-PC-IP>:69
 # b3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbQIQLwynnK9BBqNPKBqtoPB5ijAN
 # BglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqG
 # SIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3
-# AgEVMC8GCSqGSIb3DQEJBDEiBCCzK1xZspY23qFh1QfVfJwE7ptJMae4RmYYZTlr
-# iNZmTjANBgkqhkiG9w0BAQEFAASCAYBdOzhTfT/LBSzd2Dnc6FkAo8FHQV5Aent5
-# y9H0PxlCRpiGiasQ5/5QNl/u0iR8xeKEHOrnKGWmwtH8T+d/He89kN3KCFFXleoo
-# 3FDLbVvr2KPWyE0k8hETr0VxZh2FylT0UjZV0s0NEb3WQB/27qGlh5URiIas/oiT
-# x9KZPyeC34nP/K3Bv9xWVpa8Ooh9sLSMXb+SNLvPoR3B9GDIV+luBlBdIMTJUTmI
-# mXumzKtOBr18GrKOKIAVG8mp2FjgDbK+661m+6K/twdJ96e4nW5AGuDUuMVcOeGe
-# 2A319rgr74ePa1yt74RKMrTKKvWj/2v7o2/wWGF/OqCC4biZcJHEMe0dGk9rsGsQ
-# CO/FGmkj/zyF0SUCRVNYclfbYZGhBUuci/71vYn4Ahg1lUHKySk+vIEdaxEaShCw
-# M+ibKyfyn/dnAZ8p+zyJLsUIFq47haJZtORw6XQCmSJrpOByfv/UuQasxMikDUZC
-# UQWfpH9O7FlOpcR7zkBB6jmcSCtVf0w=
+# AgEVMC8GCSqGSIb3DQEJBDEiBCDqst9krkCm6IS/0QmWjNpoByxT4oIOW2RtAZtF
+# k2Jj2TANBgkqhkiG9w0BAQEFAASCAYBGBFurRsXxLUsdIbfbLi3HnN5stVwIaFF0
+# QypWcWP8pKHLWYIR2kBnXASNvN53m7SN9TeaFM4W1QS6BxQN4sVi0PuJnQwp+de/
+# AGX6L8yFO4nXA1yVbPTC+ZgLd96yfAMfg/xNb21saN+Cwn0UVfi/MGMqt8ljIPbc
+# rkmUvOKMr8pqMINkBonsE32G+c78C3TFv0lxOZk3Z4jSb4bn/ByBc89kvycKQ3g0
+# GHvFPFXk1W27Wg0uE+jk2TgHHMDrBsegvdeCrqa31qc3WrwbPvWR+ukQuAe0V2L0
+# UpW+aYc4O7aF41hCdcYImCtWk2cH+etqntT3dEwpJgFRlTz1tR755ZfPjkzW3yzK
+# LGkSMSg7OnoCgmmJ1I4YRUrzbO2wY5kUgi1Lo5soK5ceDnzY0kQGpxtLOf7/TV0i
+# 9J3yP4hm3w7O5nvMHh+ykacL8ZJl77NDoeDrw3KaGfH3itWhONfRreq6OUFYpkWX
+# ujN7gEkcZ3T7CM8v0vFpB3h0KpWyxbY=
 # SIG # End signature block

@@ -62,14 +62,14 @@ namespace VoxlDisplay
     // free of a JSON dependency.
     internal sealed class Settings
     {
-        public string Resolution = "2560x1600";
-        public int ScalePercent = 200;
+        public string Resolution = "1920x1080";
+        public int ScalePercent = 150;
         public string Quality = "High";
         public string Preset = "ultrafast";
         public int Crf = 20;
-        public int MaxMbps = 150;
+        public int MaxMbps = 60;
         public int Fps = 60;
-        public int Threads = 8;
+        public int Threads = 4;
         public bool Clipboard = true;
         public bool Audio = true;
         public bool ReadOnly = false;
@@ -302,7 +302,10 @@ namespace VoxlDisplay
         private bool _syncing;
 
         private static readonly string[] QualityNames = { "Low", "Balanced", "High", "Maximum", "Custom" };
-        private static readonly string[] PresetNames = { "ultrafast", "superfast", "veryfast", "faster" };
+        // What the user picks, and the x264 names those entries stand for.
+        private static readonly string[] PresetNames = {
+            "Fastest (ultrafast)", "Fast (superfast)", "Balanced (veryfast)", "Best quality (faster)" };
+        private static readonly string[] PresetValues = { "ultrafast", "superfast", "veryfast", "faster" };
 
         public MainForm()
         {
@@ -359,12 +362,31 @@ namespace VoxlDisplay
             _quality.SelectedIndexChanged += QualityChanged;
             Controls.Add(_quality);
 
-            AddLabel("Encoder preset (latency)", 306, 238);
+            AddLabel("Encoder preset", 306, 238);
             Combo(_preset, 306, 270, 260);
             foreach (string p in PresetNames) _preset.Items.Add(p);
             Controls.Add(_preset);
 
             AddLabel("CRF", 26, 322);
+            var crfHelp = new FlatButton();
+            crfHelp.Text = "?";
+            crfHelp.Font = new Font("Segoe UI Semibold", 9f);
+            crfHelp.Location = new Point(60, 320);
+            crfHelp.Size = new Size(20, 20);
+            crfHelp.BackColor = Color.FromArgb(48, 48, 58);
+            crfHelp.ForeColor = Color.FromArgb(200, 200, 210);
+            crfHelp.FlatAppearance.BorderSize = 1;
+            crfHelp.FlatAppearance.BorderColor = Color.FromArgb(88, 88, 100);
+            crfHelp.Click += delegate
+            {
+                MessageBox.Show(this,
+                    "CRF is the quality knob of the video encoder.\n\n" +
+                    "Lower means a sharper picture and a bigger stream. Higher means a smaller, softer one.\n\n" +
+                    "For a desktop, 18 to 22 is a good range. Start at 20; use 24 to 26 if the tablet is on weak Wi-Fi.\n\n" +
+                    "Max Mbps is only a ceiling: the encoder uses what the picture needs, up to that number.",
+                    "CRF", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            };
+            Controls.Add(crfHelp);
             Number(_crf, 26, 354, 110, 10, 40);
             Controls.Add(_crf);
 
@@ -691,8 +713,7 @@ namespace VoxlDisplay
             if (_scale.Items.Count > 0) _scale.SelectedIndex = best;
             _quality.SelectedItem = _s.Quality;
             if (_quality.SelectedIndex < 0 && _quality.Items.Count > 0) _quality.SelectedIndex = 2;
-            _preset.SelectedItem = _s.Preset;
-            if (_preset.SelectedIndex < 0) _preset.SelectedIndex = 0;
+            _preset.SelectedIndex = Math.Max(0, Array.IndexOf(PresetValues, _s.Preset));
             _maxMbps.Value = Clamp(_s.MaxMbps, _maxMbps);
             _crf.Value = Clamp(_s.Crf, _crf);
             _threads.Value = Clamp(_s.Threads, _threads);
@@ -718,10 +739,10 @@ namespace VoxlDisplay
             if (_syncing) return;
             _syncing = true;
             string q = _quality.SelectedItem as string;
-            if (q == "Low") { _crf.Value = 26; _maxMbps.Value = 15; _preset.SelectedItem = "ultrafast"; }
-            else if (q == "Balanced") { _crf.Value = 22; _maxMbps.Value = 40; _preset.SelectedItem = "ultrafast"; }
-            else if (q == "High") { _crf.Value = 20; _maxMbps.Value = 150; _preset.SelectedItem = "ultrafast"; }
-            else if (q == "Maximum") { _crf.Value = 16; _maxMbps.Value = 150; _preset.SelectedItem = "superfast"; }
+            if (q == "Low") { _crf.Value = 26; _maxMbps.Value = 15; _preset.SelectedIndex = 0; }
+            else if (q == "Balanced") { _crf.Value = 22; _maxMbps.Value = 40; _preset.SelectedIndex = 0; }
+            else if (q == "High") { _crf.Value = 20; _maxMbps.Value = 60; _preset.SelectedIndex = 0; }
+            else if (q == "Maximum") { _crf.Value = 16; _maxMbps.Value = 150; _preset.SelectedIndex = 1; }
             _syncing = false;
         }
 
@@ -769,7 +790,7 @@ namespace VoxlDisplay
             if (int.TryParse(_scale.SelectedItem == null ? "" : _scale.SelectedItem.ToString().TrimEnd('%'), out pct))
                 r.ScalePercent = pct;
             r.Quality = _quality.SelectedItem as string;
-            r.Preset = _preset.SelectedItem as string;
+            r.Preset = PresetValues[Math.Max(0, _preset.SelectedIndex)];
             r.Crf = (int)_crf.Value;
             r.MaxMbps = (int)_maxMbps.Value;
             r.Fps = int.Parse(_fps.SelectedItem.ToString());

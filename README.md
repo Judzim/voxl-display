@@ -51,12 +51,16 @@ Open **Voxl Display** from the desktop shortcut.
 | Scaling | the monitor's DPI scale (125 % to 225 %). Steps depend on the resolution. |
 | Stream quality | Low / Balanced / High / Maximum presets; Custom lets you set the numbers yourself. |
 | FPS | 30, 50, 60, 90 or 120. The panel refresh of the virtual monitor caps this. |
-| Encoder preset | `ultrafast` is the lowest latency, `faster` compresses better at the same quality. |
+| Encoder preset | speed versus size. **Fastest** is the lowest latency, **Best quality** packs the same picture into fewer bits. |
 | Max bitrate | the ceiling for the encoder, in Mbps. A still desktop uses a fraction of it. |
-| CRF | lower is sharper and larger. 18 to 22 is a good range for a desktop. |
+| CRF | the quality knob: lower is sharper and larger. 18 to 22 is a good range for a desktop. The **?** next to it explains it in the app. |
 | Encoder threads | x264 slice threads. More threads encode faster, slightly bigger files. |
 | Clipboard / Audio | share the clipboard and the system audio with the tablet. |
 | Read-only viewer | the tablet can watch but not type or click. |
+
+The defaults are 1920x1080 at 150 %, quality **High** (CRF 20, 60 Mbps), encoder preset
+**Fastest** and 4 threads: a good starting point for a tablet on Wi-Fi. **Defaults** puts
+these values back at any time.
 
 Press **Start**. The status line shows the address, and **QR code** opens a scannable
 code for the tablet.

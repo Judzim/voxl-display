@@ -258,9 +258,23 @@ namespace VoxlDisplay
                 g.FillEllipse(fill, circle);
                 g.DrawEllipse(pen, circle);
             }
-            TextRenderer.DrawText(g, "?", Font, ClientRectangle,
-                _over ? Color.FromArgb(240, 240, 245) : Color.FromArgb(170, 170, 180),
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            // VerticalCenter centres the font's line box, which is taller than this circle, so the
+            // glyph looks high. Draw the glyph as an outline and centre its actual ink instead.
+            using (var glyph = new System.Drawing.Drawing2D.GraphicsPath())
+            {
+                glyph.AddString("?", Font.FontFamily, (int)Font.Style,
+                    Font.SizeInPoints * g.DpiY / 72f, PointF.Empty, StringFormat.GenericTypographic);
+                RectangleF ink = glyph.GetBounds();
+                using (var move = new System.Drawing.Drawing2D.Matrix())
+                {
+                    move.Translate((ClientSize.Width - ink.Width) / 2f - ink.Left,
+                        (ClientSize.Height - ink.Height) / 2f - ink.Top);
+                    glyph.Transform(move);
+                }
+                using (var brush = new SolidBrush(
+                    _over ? Color.FromArgb(240, 240, 245) : Color.FromArgb(170, 170, 180)))
+                    g.FillPath(brush, glyph);
+            }
         }
     }
 

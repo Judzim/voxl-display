@@ -313,7 +313,6 @@ namespace VoxlDisplay
             // form laid out in 96 dpi units. Scaling is done by hand instead, from the
             // window's real DPI once it exists.
             AutoScaleMode = AutoScaleMode.None;
-            AdjustFontsToDpi();
             Text = "Voxl Display - second monitor";
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -325,7 +324,7 @@ namespace VoxlDisplay
 
             var title = new Label();
             title.Text = "Second monitor for your tablet";
-            title.Font = new Font("Segoe UI Semibold", 15f * _pt);
+            title.Font = new Font("Segoe UI Semibold", 15f);
             title.AutoSize = true;
             title.Location = new Point(26, 16);
             Controls.Add(title);
@@ -491,16 +490,28 @@ namespace VoxlDisplay
         // handle exists, so the one-time scale happens here; doing it in the constructor
         // left the window at 1:1 while the fonts grew with the DPI, which is what made
         // every row look crammed.
-        // The window keeps its design size in device pixels (the size that was asked for).
-        // Fonts are in points and would grow with the DPI, so they are scaled down by the
-        // same factor; the layout and the text then keep the proportions they were drawn for.
-        private float _pt = 1f;
 
-        private void AdjustFontsToDpi()
+        // A compromise between the tiny 1:1 window and a full 150 % one: the layout is scaled
+        // a little, the fonts keep their normal size, so nothing is clipped and nothing is
+        // unreadably small.
+        private void ScaleModestly()
         {
-            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
-                _pt = 96f / g.DpiX;
-            Font = new Font("Segoe UI", 9.75f * _pt);
+            float f = GetDpiForWindow(Handle) / 96f;
+            if (f > 1.25f) f = 1.25f;
+            if (f < 1.0f) f = 1.0f;
+            if (f <= 1.001f) return;
+            SuspendLayout();
+            Scale(new SizeF(f, f));
+            ClientSize = new Size((int)(640 * f), (int)(742 * f));
+            ResumeLayout(true);
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (_scaled) return;
+            _scaled = true;
+            ScaleModestly();
         }
         private void ScaleToDpi()
         {
@@ -521,7 +532,7 @@ namespace VoxlDisplay
         {
             var l = new Label();
             l.Text = text.ToUpperInvariant();
-            l.Font = new Font("Segoe UI Semibold", 7.5f * _pt);
+            l.Font = new Font("Segoe UI Semibold", 8.25f);
             l.ForeColor = Color.FromArgb(100, 100, 112);
             l.AutoSize = true;
             l.Location = new Point(26, y);

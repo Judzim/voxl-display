@@ -225,6 +225,45 @@ namespace VoxlDisplay
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
     }
+    // A small round "?" for a field's help text. A square flat chip next to a label looked
+    // like a stray box, so this draws only the circle on the form background.
+    internal sealed class HelpDot : Button
+    {
+        private bool _over;
+
+        public HelpDot()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = Color.FromArgb(23, 23, 27);
+            Cursor = Cursors.Hand;
+            TabStop = false;
+            Font = new Font("Segoe UI Semibold", 8.25f);
+        }
+
+        protected override void OnMouseEnter(EventArgs e) { _over = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _over = false; Invalidate(); base.OnMouseLeave(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            g.Clear(Parent == null ? BackColor : Parent.BackColor);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            int size = Math.Min(ClientSize.Width, ClientSize.Height) - 2;
+            var circle = new Rectangle((ClientSize.Width - size) / 2, (ClientSize.Height - size) / 2, size, size);
+            using (var fill = new SolidBrush(Color.FromArgb(38, 38, 46)))
+            using (var pen = new Pen(_over ? Color.FromArgb(150, 150, 160) : Color.FromArgb(78, 78, 88)))
+            {
+                g.FillEllipse(fill, circle);
+                g.DrawEllipse(pen, circle);
+            }
+            TextRenderer.DrawText(g, "?", Font, ClientRectangle,
+                _over ? Color.FromArgb(240, 240, 245) : Color.FromArgb(170, 170, 180),
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
+
     // The stock flat Button draws its caption a few pixels off centre (measured 8 design px
     // high at 150 %). This paints the caption itself, vertically centred in the client area.
     internal sealed class FlatButton : Button
@@ -368,15 +407,9 @@ namespace VoxlDisplay
             Controls.Add(_preset);
 
             AddLabel("CRF", 26, 322);
-            var crfHelp = new FlatButton();
-            crfHelp.Text = "?";
-            crfHelp.Font = new Font("Segoe UI Semibold", 9f);
-            crfHelp.Location = new Point(60, 320);
-            crfHelp.Size = new Size(20, 20);
-            crfHelp.BackColor = Color.FromArgb(48, 48, 58);
-            crfHelp.ForeColor = Color.FromArgb(200, 200, 210);
-            crfHelp.FlatAppearance.BorderSize = 1;
-            crfHelp.FlatAppearance.BorderColor = Color.FromArgb(88, 88, 100);
+            var crfHelp = new HelpDot();
+            crfHelp.Location = new Point(63, 325);
+            crfHelp.Size = new Size(18, 18);
             crfHelp.Click += delegate
             {
                 MessageBox.Show(this,
@@ -387,6 +420,8 @@ namespace VoxlDisplay
                     "CRF", MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             Controls.Add(crfHelp);
+            // the auto sized label next to it is wider than its text and would paint over the circle
+            crfHelp.BringToFront();
             Number(_crf, 26, 354, 110, 10, 40);
             Controls.Add(_crf);
 

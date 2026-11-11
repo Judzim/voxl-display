@@ -573,6 +573,7 @@ namespace VoxlDisplay
                 {
                     string enabled = Display.SetDeviceEnabled(true);
                     if (enabled != "ok") { Status("could not enable the virtual display: " + enabled, true); return; }
+                    if (!Display.WaitForAttached(true, 10)) { Status("the virtual display did not come back", true); return; }
                 }
                 _device = Display.FindDeviceName(MonitorTag);
                 if (_device == null) { Status("the virtual display did not come back", true); return; }
@@ -690,6 +691,7 @@ namespace VoxlDisplay
             // Switch the monitor off, otherwise the windows that were opened on it stay
             // there with no screen to show them.
             string detached = Display.SetDeviceEnabled(false);
+            detached = Display.WaitForAttached(false, 8) ? "ok" : "the display is still attached";
             if (detached == "ok")
             {
                 _device = null;
@@ -1176,6 +1178,20 @@ namespace VoxlDisplay
         // on every Windows build: SetDisplayConfig refuses the supplied configuration for
         // these drivers (ERROR_INVALID_PARAMETER). Windows moves the windows back to the
         // remaining screens when the monitor disappears.
+        // Waits until the desktop really has (or has lost) the display. pnputil returns
+        // success before Windows finishes the topology change, so this is the only honest
+        // check.
+        public static bool WaitForAttached(bool want, int seconds)
+        {
+            for (int i = 0; i < seconds * 4; i++)
+            {
+                bool attached = FindDeviceName("MTT1337") != null;
+                if (attached == want) return true;
+                System.Threading.Thread.Sleep(250);
+            }
+            return false;
+        }
+
         public static string SetDeviceEnabled(bool on)
         {
             var dev = new List<PnpDevice>();
@@ -1198,7 +1214,11 @@ namespace VoxlDisplay
                 {
                     Process p = Process.Start(psi);
                     p.WaitForExit();
-                    if (p.ExitCode != 0) return "pnputil exited with " + p.ExitCode + " (run the app as administrator)";
+                    if (p.ExitCode != 0)
+                    {
+                        // Not elevated: ask for administrator rights for this one action.
+                        return SetDeviceEnabledElevated(on);
+                    }
                 }
                 catch (Exception e)
                 {
@@ -1210,6 +1230,31 @@ namespace VoxlDisplay
         }
 
         private sealed class PnpDevice { public string Id; public string Name; }
+
+        // One UAC prompt, then the helper script does the same pnputil call.
+        private static string SetDeviceEnabledElevated(bool on)
+        {
+            string script = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "switch-device.ps1");
+            if (!File.Exists(script)) return "switch-device.ps1 is missing next to the app";
+
+            var psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + script + "\" -State " + (on ? "on" : "off"));
+            psi.UseShellExecute = true;
+            psi.Verb = "runas";
+            psi.WindowStyle = ProcessWindowStyle.Hidden;
+            try
+            {
+                Process p = Process.Start(psi);
+                p.WaitForExit();
+                if (p.ExitCode != 0) return "the switch helper exited with " + p.ExitCode;
+                System.Threading.Thread.Sleep(on ? 2500 : 1200);
+                return "ok";
+            }
+            catch (Exception e)
+            {
+                return e.Message;
+            }
+        }
 
         // Detaches the virtual monitor from the desktop, so Windows moves the windows that
         // were on it back to the remaining screens. The driver stays installed.

@@ -104,12 +104,13 @@ machine that has never seen the file; that reputation needs a paid certificate.
 
 ```powershell
 # elevated
-.\install.ps1 -Uninstall          # app, shortcuts, firewall rule
-.\uninstall-vdd.ps1               # virtual display driver, its files and certificate
+.\uninstall.ps1                  # app, shortcuts, firewall rules, logon task, driver
+.\uninstall.ps1 -KeepDriver      # the same, but leave the virtual display installed
 ```
 
-The driver is not removed by `install.ps1 -Uninstall` on purpose: other tools on the
-machine may be using the same virtual display.
+That covers everything this project adds: the app folder, both shortcuts, every voxl
+firewall rule, the logon task if one was created, the TLS certificate and the virtual
+display driver.
 
 ## Build from source
 
@@ -127,12 +128,12 @@ The app has no dependency on voxl's source: it composes a command line and start
 ## How it fits together
 
 ```
-VoxlDisplay.exe  ── sets the monitor mode and DPI, starts voxl.exe
-      │
-voxl.exe         ── DXGI desktop duplication of the virtual monitor
-      │             H.264 (x264) → WebSocket over TLS
-      ▼
-tablet browser   ── WebCodecs decode, draws the desktop, sends input back
+VoxlDisplay.exe  â”€â”€ sets the monitor mode and DPI, starts voxl.exe
+      â”‚
+voxl.exe         â”€â”€ DXGI desktop duplication of the virtual monitor
+      â”‚             H.264 (x264) â†’ WebSocket over TLS
+      â–¼
+tablet browser   â”€â”€ WebCodecs decode, draws the desktop, sends input back
 ```
 
 The virtual monitor is a normal device node (`ROOT\DISPLAY\0000`, hardware id

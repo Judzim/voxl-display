@@ -12,3 +12,6 @@ bin/
 # Local test captures
 *.png
 !docs/screenshot.png
+
+# Packaging staging folder
+.package/

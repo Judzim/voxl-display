@@ -73,17 +73,20 @@ if ($monitor) {
 }
 
 # 3. Firewall: the app is reachable from the LAN only, never from the internet.
+# Recreated every time: an upgrade moves the program, and a rule pointing at the old
+# path silently blocks the tablet.
 $rule = Get-NetFirewallRule -DisplayName "voxl 6901 (LAN)" -ErrorAction SilentlyContinue
-if (-not $rule) {
-    New-NetFirewallRule -DisplayName "voxl 6901 (LAN)" -Direction Inbound -Action Allow `
-        -Protocol TCP -LocalPort 6901 -RemoteAddress LocalSubnet -Profile Private, Public `
-        -Program (Join-Path $Target "voxl.exe") | Out-Null
-    Write-Step "firewall rule added (LAN only)"
-} else {
-    Write-Step "firewall rule already present"
-}
+if ($rule) { $rule | Remove-NetFirewallRule }
+New-NetFirewallRule -DisplayName "voxl 6901 (LAN)" -Direction Inbound -Action Allow `
+    -Protocol TCP -LocalPort 6901 -RemoteAddress LocalSubnet -Profile Private, Public `
+    -Program (Join-Path $Target "voxl.exe") | Out-Null
+Write-Step "firewall rule set for $Target\voxl.exe (LAN only)"
 
-# 4. Shortcuts.
+# 4. Context icon, before the shortcuts point at it.
+$icon = Join-Path $Source "voxl.ico"
+if (Test-Path $icon) { Copy-Item $icon (Join-Path $Target "voxl.ico") -Force }
+
+# 5. Shortcuts.
 $ws = New-Object -ComObject WScript.Shell
 foreach ($dir in @($desktop, $startMenu)) {
     $link = $ws.CreateShortcut((Join-Path $dir $shortcutName))
@@ -95,10 +98,6 @@ foreach ($dir in @($desktop, $startMenu)) {
     Write-Step "shortcut in $dir"
 }
 if (Test-Path $legacyShortcut) { Remove-Item $legacyShortcut -Force; Write-Step "removed the old shortcut" }
-
-# 5. Icon next to the exe, for the shortcut.
-$icon = Join-Path $Source "voxl.ico"
-if (Test-Path $icon) { Copy-Item $icon (Join-Path $Target "voxl.ico") -Force }
 
 Write-Host ""
 Write-Host "Done. Start it from the desktop shortcut 'Voxl Display'." -ForegroundColor Green

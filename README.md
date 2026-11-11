@@ -121,6 +121,9 @@ build.cmd
 That runs the .NET Framework compiler on `VoxlDisplay.cs` and `Qr.cs`. The only
 dependency is what Windows already has (`System.Windows.Forms`, `System.Drawing`).
 
+`voxl.exe` is not in git (it is a 7 MB upstream binary). Take it from a release zip, or
+build it from the fork's Windows workflow.
+
 The app has no dependency on voxl's source: it composes a command line and starts
 `voxl.exe` from its own folder. To rebuild voxl for Windows, see the
 [Windows build workflow](https://github.com/tembo/voxl) used by this project's fork.
@@ -128,12 +131,12 @@ The app has no dependency on voxl's source: it composes a command line and start
 ## How it fits together
 
 ```
-VoxlDisplay.exe  â”€â”€ sets the monitor mode and DPI, starts voxl.exe
-      â”‚
-voxl.exe         â”€â”€ DXGI desktop duplication of the virtual monitor
-      â”‚             H.264 (x264) â†’ WebSocket over TLS
-      â–¼
-tablet browser   â”€â”€ WebCodecs decode, draws the desktop, sends input back
+VoxlDisplay.exe  Ã¢â€â‚¬Ã¢â€â‚¬ sets the monitor mode and DPI, starts voxl.exe
+      Ã¢â€â€š
+voxl.exe         Ã¢â€â‚¬Ã¢â€â‚¬ DXGI desktop duplication of the virtual monitor
+      Ã¢â€â€š             H.264 (x264) Ã¢â€ â€™ WebSocket over TLS
+      Ã¢â€“Â¼
+tablet browser   Ã¢â€â‚¬Ã¢â€â‚¬ WebCodecs decode, draws the desktop, sends input back
 ```
 
 The virtual monitor is a normal device node (`ROOT\DISPLAY\0000`, hardware id

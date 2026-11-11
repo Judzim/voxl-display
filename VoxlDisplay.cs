@@ -553,158 +553,228 @@ namespace VoxlDisplay
             return "https://" + _s.Addr + ":" + _s.Port + "/?token=" + _password.Text;
         }
 
+        // Everything that talks to Windows or waits for a UAC prompt runs on a background
+        // thread: doing it on the UI thread is what made the window freeze on Stop.
+        private delegate StepResult Work();
+
+        private sealed class StepResult
+        {
+            public string Message;
+            public bool Error;
+            public string NeedsMode;
+
+            public static StepResult Ok(string message) { return new StepResult { Message = message }; }
+            public static StepResult Fail(string message) { return new StepResult { Message = message, Error = true }; }
+            public static StepResult NeedMode(string mode) { return new StepResult { NeedsMode = mode, Message = "the driver does not offer " + mode }; }
+        }
+
+        private sealed class Request
+        {
+            public string Resolution;
+            public int ScalePercent;
+            public string Quality, Preset;
+            public int Crf, MaxMbps, Fps, Threads;
+            public bool Clipboard, Audio, ReadOnly;
+            public string Password;
+        }
+
+        private Request ReadForm()
+        {
+            var r = new Request();
+            r.Resolution = _resolution.Text.Trim();
+            int pct;
+            if (int.TryParse(_scale.SelectedItem == null ? "" : _scale.SelectedItem.ToString().TrimEnd('%'), out pct))
+                r.ScalePercent = pct;
+            r.Quality = _quality.SelectedItem as string;
+            r.Preset = _preset.SelectedItem as string;
+            r.Crf = (int)_crf.Value;
+            r.MaxMbps = (int)_maxMbps.Value;
+            r.Fps = int.Parse(_fps.SelectedItem.ToString());
+            r.Threads = (int)_threads.Value;
+            r.Clipboard = _clipboard.Checked;
+            r.Audio = _audio.Checked;
+            r.ReadOnly = _readOnly.Checked;
+            r.Password = _password.Text;
+            return r;
+        }
+
+        private void SetBusy(bool busy)
+        {
+            _busy = busy;
+            _start.Enabled = !busy;
+            _stop.Enabled = !busy;
+            _reload.Enabled = !busy;
+            Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+            if (busy) _status.Text = "working...";
+        }
+
+        private void Run(Work work)
+        {
+            if (_busy) return;
+            SetBusy(true);
+            var bw = new System.ComponentModel.BackgroundWorker();
+            bw.DoWork += delegate(object s, System.ComponentModel.DoWorkEventArgs e) { e.Result = work(); };
+            bw.RunWorkerCompleted += delegate(object s, System.ComponentModel.RunWorkerCompletedEventArgs e)
+            {
+                SetBusy(false);
+                if (e.Error != null) { Status(e.Error.Message, true); RefreshState(); return; }
+                StepResult r = (StepResult)e.Result;
+                Status(r.Message, r.Error);
+
+                if (r.NeedsMode != null)
+                {
+                    int w, h;
+                    Display.ParseMode(r.NeedsMode, out w, out h);
+                    DialogResult answer = MessageBox.Show(
+                        "The driver does not offer " + r.NeedsMode + ".\r\n\r\n" +
+                        "Add it to the driver's mode list? The display restarts for a second.",
+                        "Add custom resolution", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    Request req = ReadForm();
+                    bool add = answer == DialogResult.Yes;
+                    Run(delegate
+                    {
+                        if (add)
+                        {
+                            string problem = Display.AddMode(w, h, 60);
+                            if (problem != null) return StepResult.Fail("could not add the mode: " + problem);
+                        }
+                        return DoStart(req, !add);
+                    });
+                    return;
+                }
+                RefreshState();
+            };
+            bw.RunWorkerAsync();
+        }
+
+        // What Windows knows right now: the driver may be installed, switched off, or both.
+        private void RefreshState()
+        {
+            _device = Display.FindDeviceName(MonitorTag);
+            if (_device != null)
+            {
+                _resolution.Items.Clear();
+                foreach (string m in Display.ListModes(_device)) _resolution.Items.Add(m);
+                _scale.Items.Clear();
+                int min, cur, max;
+                Display.GetScaleRange(MonitorTag, out min, out cur, out max);
+                for (int i = min; i <= max; i++)
+                {
+                    int pct = Display.ScalePercentFor(MonitorTag, i);
+                    if (pct > 0) _scale.Items.Add(pct + "%");
+                }
+                ApplySettings();
+                _install.Visible = false;
+                if (!_busy && _status.Text.StartsWith("stopped")) _hint.Text = "Press Start to stream.";
+                return;
+            }
+
+            bool installed = Display.DriverInstalled();
+            _install.Visible = !installed;
+            if (installed)
+            {
+                _install.Visible = false;
+                _hint.Text = "The driver is installed and the monitor is switched off. Press Start to connect it.";
+            }
+            else
+            {
+                _hint.Text = "The driver is missing. Press Install driver, or run install.cmd from the release zip.";
+            }
+        }
+
         private void StartClicked(object sender, EventArgs e)
         {
             if (_busy) return;
-            if (_device == null) { MessageBox.Show("The virtual display was not found."); return; }
-            if (!File.Exists(_s.VoxlPath)) { MessageBox.Show("voxl.exe was not found: " + _s.VoxlPath); return; }
-
-            _busy = true;
-            try
-            {
-                Status("applying display settings...", false);
-
-                // Whatever Windows does to the other monitors while the virtual one appears,
-                // it is put back at the end of this method.
-                List<Display.Snapshot> before = Display.TakeSnapshot();
-
-                // The monitor may be switched off from a previous Stop; bring it back first.
-                if (_device == null || Display.FindDeviceName(MonitorTag) == null)
-                {
-                    string enabled = Display.SetDeviceEnabled(true);
-                    if (enabled != "ok") { Status("could not enable the virtual display: " + enabled, true); return; }
-                    if (!Display.WaitForAttached(true, 10)) { Status("the virtual display did not come back", true); return; }
-                }
-                _device = Display.FindDeviceName(MonitorTag);
-                if (_device == null) { Status("the virtual display did not come back", true); return; }
-
-                int w, h;
-                if (!Display.ParseMode(_resolution.Text.Trim(), out w, out h))
-                {
-                    MessageBox.Show("Resolution must look like 2560x1600.", "Voxl Display");
-                    return;
-                }
-                if (!_resolution.Items.Contains(_resolution.Text.Trim()))
-                {
-                    // The driver only offers the modes in its settings file. Ask before
-                    // writing a new one; the device restarts for a second.
-                    DialogResult add = MessageBox.Show(
-                        "The driver does not offer " + w + "x" + h + ".\r\n\r\n" +
-                        "Add it to the driver's mode list? The display restarts for a second.",
-                        "Add custom resolution", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
-                    if (add == DialogResult.Yes)
-                    {
-                        Status("adding " + w + "x" + h + " to the driver...", false);
-                        string problem = Display.AddMode(w, h, 60);
-                        if (problem != null)
-                        {
-                            MessageBox.Show("Could not add the mode: " + problem, "Voxl Display");
-                            return;
-                        }
-                        _resolution.Items.Clear();
-                        foreach (string m in Display.ListModes(_device)) _resolution.Items.Add(m);
-                        _resolution.Text = w + "x" + h;
-                        // The device restarted, so its GDI name and the scaling steps are
-                        // new: re-resolve before touching the display again.
-                        string refreshed = Display.FindDeviceName(MonitorTag);
-                        if (refreshed == null)
-                        {
-                            MessageBox.Show("The virtual display did not come back after the restart.", "Voxl Display");
-                            return;
-                        }
-                        _device = refreshed;
-                        _resolution.Items.Clear();
-                        foreach (string m in Display.ListModes(_device)) _resolution.Items.Add(m);
-                        _resolution.Text = w + "x" + h;
-                        Status("added " + w + "x" + h + ", applying...", false);
-                    }
-                    else
-                    {
-                        string current = Display.CurrentMode(_device);
-                        if (!Display.ParseMode(current, out w, out h))
-                        {
-                            MessageBox.Show("The display reports no usable mode.", "Voxl Display");
-                            return;
-                        }
-                        Status("keeping " + current, false);
-                        _resolution.Text = current;
-                    }
-                }
-                string r = Display.SetMode(_device, w, h, 60);
-                if (r != "ok") { Status("resolution: " + r, true); return; }
-                _s.Resolution = _resolution.Text.Trim();
-
-                int pct;
-                if (int.TryParse(_scale.SelectedItem.ToString().TrimEnd('%'), out pct))
-                {
-                    int idx = Display.IndexOfPercent(MonitorTag, pct);
-                    if (idx >= 0) Display.SetScale(MonitorTag, idx);
-                    _s.ScalePercent = pct;
-                }
-
-                string placed = Display.PlaceOnRight(_device);
-                if (placed != "ok") Status("could not place the display: " + placed, true);
-
-                string restored = Display.RestoreOthers(before, MonitorTag);
-                if (restored != "ok") Status("other displays were changed by Windows, restored: " + restored, false);
-
-                _s.Quality = _quality.SelectedItem as string;
-                _s.Preset = _preset.SelectedItem as string;
-                _s.Crf = (int)_crf.Value;
-                _s.MaxMbps = (int)_maxMbps.Value;
-                _s.Fps = int.Parse(_fps.SelectedItem.ToString());
-                _s.Threads = (int)_threads.Value;
-                _s.Clipboard = _clipboard.Checked;
-                _s.Audio = _audio.Checked;
-                _s.ReadOnly = _readOnly.Checked;
-                _s.Password = _password.Text;
-                _s.Save();
-
-                KillVoxl();
-                _voxl = Display.StartVoxl(_s, _device);
-                System.Threading.Thread.Sleep(1500);
-                if (_voxl.HasExited)
-                {
-                    Status("voxl exited with code " + _voxl.ExitCode + ", see voxl.log", true);
-                    return;
-                }
-                Status("running at https://" + _s.Addr + ":" + _s.Port, false);
-                _hint.Text = "Open the link above on the tablet, or scan the QR code.";
-            }
-            catch (Exception ex)
-            {
-                Status("error: " + ex.Message, true);
-            }
-            finally { _busy = false; }
-        }
-
-        private static string[] Items(ComboBox c)
-        {
-            var list = new List<string>();
-            foreach (object o in c.Items) list.Add(o.ToString());
-            return list.ToArray();
+            if (!File.Exists(_s.VoxlPath)) { Status("voxl.exe was not found: " + _s.VoxlPath, true); return; }
+            Request req = ReadForm();
+            Run(delegate { return DoStart(req, false); });
         }
 
         private void StopClicked(object sender, EventArgs e)
         {
+            Run(DoStop);
+        }
+
+        // Runs on a background thread. Talks to Windows, never to the window.
+        private StepResult DoStart(Request req, bool keepCurrentMode)
+        {
+            int w, h;
+            if (!Display.ParseMode(req.Resolution, out w, out h))
+                return StepResult.Fail("the resolution must look like 2560x1600");
+
+            // 1. The monitor may be switched off from an earlier Stop.
+            if (Display.FindDeviceName(MonitorTag) == null)
+            {
+                string enabled = Display.SetDeviceEnabled(true);
+                if (enabled != "ok") return StepResult.Fail("could not switch the display on: " + enabled);
+                if (!Display.WaitForAttached(true, 25)) return StepResult.Fail("the display did not come back");
+            }
+            string device = Display.FindDeviceName(MonitorTag);
+            if (device == null) return StepResult.Fail("the display is not attached");
+
+            // 2. Whatever Windows does to the other monitors is undone at the end.
+            List<Display.Snapshot> before = Display.TakeSnapshot();
+
+            // 3. The mode: the driver only offers what is in its settings file.
+            bool offered = Display.ModeOffered(device, w, h, 60);
+            if (!offered && !keepCurrentMode)
+                return StepResult.NeedMode(w + "x" + h);
+            if (!offered)
+            {
+                string current = Display.CurrentMode(device);
+                int cw, ch;
+                if (!Display.ParseMode(current, out cw, out ch))
+                    return StepResult.Fail("the display reports no usable mode");
+                w = cw; h = ch;
+            }
+
+            string mode = Display.SetMode(device, w, h, 60);
+            if (mode != "ok") return StepResult.Fail("resolution: " + mode);
+
+            if (req.ScalePercent > 0)
+            {
+                int idx = Display.IndexOfPercent(MonitorTag, req.ScalePercent);
+                if (idx >= 0) Display.SetScale(MonitorTag, idx);
+            }
+
+            string placed = Display.PlaceOnRight(device);
+            string restored = Display.RestoreOthers(before, MonitorTag);
+
+            // 4. Save and start the stream.
+            _s.Resolution = w + "x" + h;
+            _s.ScalePercent = req.ScalePercent;
+            _s.Quality = req.Quality;
+            _s.Preset = req.Preset;
+            _s.Crf = req.Crf;
+            _s.MaxMbps = req.MaxMbps;
+            _s.Fps = req.Fps;
+            _s.Threads = req.Threads;
+            _s.Clipboard = req.Clipboard;
+            _s.Audio = req.Audio;
+            _s.ReadOnly = req.ReadOnly;
+            _s.Password = req.Password;
+            _s.Save();
+
             KillVoxl();
-            // Switch the monitor off, otherwise the windows that were opened on it stay
-            // there with no screen to show them.
-            string detached = Display.SetDeviceEnabled(false);
-            detached = Display.WaitForAttached(false, 8) ? "ok" : "the display is still attached";
-            if (detached == "ok")
-            {
-                _device = null;
-                _resolution.Items.Clear();
-                _scale.Items.Clear();            // the driver is still installed, only switched off
-                _install.Visible = false;
-                Status("stopped, the virtual display is disconnected", false);
-                _hint.Text = "The driver stays installed. Press Start to connect it again.";
-            }
-            else
-            {
-                Status("stopped (the display stayed attached: " + detached + ")", true);
-            }
+            Process voxl = Display.StartVoxl(_s, device);
+            _voxl = voxl;
+            System.Threading.Thread.Sleep(1500);
+            if (voxl.HasExited)
+                return StepResult.Fail("voxl exited with code " + voxl.ExitCode + ", see voxl.log");
+
+            string note = "";
+            if (placed != "ok") note += " (placement: " + placed + ")";
+            if (restored != "ok") note += " (restored: " + restored + ")";
+            return StepResult.Ok("running at https://" + _s.Addr + ":" + _s.Port + note);
+        }
+
+        private StepResult DoStop()
+        {
+            KillVoxl();
+            string switched = Display.SetDeviceEnabled(false);
+            if (!Display.WaitForAttached(false, 8))
+                return StepResult.Fail("stopped, but the display is still attached (" + switched + ")");
+            return StepResult.Ok("stopped, the virtual display is disconnected");
         }
 
         // Defaults for everything the driver and the stream care about; the local paths
@@ -917,7 +987,7 @@ namespace VoxlDisplay
         [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SRCNM n);
         [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SCALE_GET s);
         [DllImport("user32.dll")] private static extern int DisplayConfigSetDeviceInfo(ref SCALE_SET s);
-        [DllImport("user32.dll")] private static extern int SetDisplayConfig(uint np, PATH[] paths, uint nm, MODEINFO[] modes, uint flags);
+        
 
         private static PATH[] Paths()
         {
@@ -1021,6 +1091,28 @@ namespace VoxlDisplay
             }
         }
 
+        // Is the driver package installed at all? Different from "is the monitor on".
+        public static bool DriverInstalled()
+        {
+            try
+            {
+                foreach (System.Management.ManagementObject o in new System.Management.ManagementObjectSearcher(
+                    "SELECT Name FROM Win32_PnPEntity WHERE Name LIKE '%Virtual Display Driver%'").Get())
+                    return true;
+            }
+            catch { }
+            return false;
+        }
+
+        public static bool ModeOffered(string dev, int w, int h, int hz)
+        {
+            var dm = new DEVMODE();
+            dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+            for (int i = 0; EnumDisplaySettingsW(dev, i, ref dm); i++)
+                if (dm.dmPelsWidth == w && dm.dmPelsHeight == h && dm.dmDisplayFrequency == hz) return true;
+            return false;
+        }
+
         public static string CurrentMode(string dev)
         {
             var dm = new DEVMODE();
@@ -1051,6 +1143,7 @@ namespace VoxlDisplay
         {
             public string Gdi;
             public int Width, Height, Hz;
+            public int X, Y;
             public int ScaleIndex;
         }
 
@@ -1079,7 +1172,7 @@ namespace VoxlDisplay
                 g.header.id = paths[i].source.id;
                 int idx = DisplayConfigGetDeviceInfo(ref g) == 0 ? g.cur : int.MinValue;
 
-                list.Add(new Snapshot { Gdi = s.gdi, Width = dm.dmPelsWidth, Height = dm.dmPelsHeight, Hz = dm.dmDisplayFrequency, ScaleIndex = idx });
+                list.Add(new Snapshot { Gdi = s.gdi, Width = dm.dmPelsWidth, Height = dm.dmPelsHeight, Hz = dm.dmDisplayFrequency, ScaleIndex = idx, X = dm.dmPositionX, Y = dm.dmPositionY });
             }
             return list;
         }
@@ -1095,6 +1188,20 @@ namespace VoxlDisplay
                 var dm = new DEVMODE();
                 dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
                 if (!EnumDisplaySettingsW(snap.Gdi, -1, ref dm)) continue; // gone since then
+
+                if (dm.dmPositionX != snap.X || dm.dmPositionY != snap.Y)
+                {
+                    var pos = new DEVMODE();
+                    pos.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+                    if (EnumDisplaySettingsW(snap.Gdi, -1, ref pos))
+                    {
+                        pos.dmPositionX = snap.X;
+                        pos.dmPositionY = snap.Y;
+                        pos.dmFields = 0x20; // DM_POSITION
+                        if (ChangeDisplaySettingsExW(snap.Gdi, ref pos, IntPtr.Zero, 0x00000001, IntPtr.Zero) == 0)
+                            changed.Add(snap.Gdi + " back to (" + snap.X + "," + snap.Y + ")");
+                    }
+                }
 
                 if (dm.dmPelsWidth != snap.Width || dm.dmPelsHeight != snap.Height || dm.dmDisplayFrequency != snap.Hz)
                 {
@@ -1174,10 +1281,9 @@ namespace VoxlDisplay
             return r == 0 ? "ok" : "position " + r;
         }
 
-        // Turning the device node off is the only reliable way to detach a virtual monitor
-        // on every Windows build: SetDisplayConfig refuses the supplied configuration for
-        // these drivers (ERROR_INVALID_PARAMETER). Windows moves the windows back to the
-        // remaining screens when the monitor disappears.
+        // Turning the device node off is the only reliable way to detach a virtual monitor:
+        // SetDisplayConfig refuses the supplied configuration for these drivers. Windows
+        // moves the windows back to the remaining screens when the monitor disappears.
         // Waits until the desktop really has (or has lost) the display. pnputil returns
         // success before Windows finishes the topology change, so this is the only honest
         // check.
@@ -1258,98 +1364,12 @@ namespace VoxlDisplay
 
         // Detaches the virtual monitor from the desktop, so Windows moves the windows that
         // were on it back to the remaining screens. The driver stays installed.
-        public static string Detach(string tag)
-        {
-            uint np, nm;
-            if (GetDisplayConfigBufferSizes(2, out np, out nm) != 0) return "buffer sizes";
-            if (np <= 1) return "it is the only display";
-            var paths = new PATH[np];
-            var modes = new MODEINFO[nm];
-            for (int i = 0; i < modes.Length; i++) modes[i].pad = new byte[48];
-            if (QueryDisplayConfig(2, ref np, paths, ref nm, modes, IntPtr.Zero) != 0) return "query failed";
+        
 
-            int found = -1;
-            for (int i = 0; i < np; i++)
-            {
-                var n = new TGTNAME();
-                n.header.type = 2;
-                n.header.size = (uint)Marshal.SizeOf(typeof(TGTNAME));
-                n.header.adapterId = paths[i].target.adapterId;
-                n.header.id = paths[i].target.id;
-                if (DisplayConfigGetDeviceInfo(ref n) != 0) continue;
-                if (n.path.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0) { found = i; break; }
-            }
-            if (found < 0) return "it is not attached";
-
-            var keep = new System.Collections.Generic.List<int>();
-            for (int i = 0; i < np; i++) if (i != found) keep.Add(i);
-            return Apply(keep, paths, modes);
-        }
-
-        // SetDisplayConfig wants a mode array that matches the paths exactly, so the modes
-        // each kept path points at are copied into a new array and the indices rewritten.
-        // Passing the original array unchanged returns ERROR_INVALID_PARAMETER (87).
-        private static string Apply(System.Collections.Generic.List<int> keep, PATH[] paths, MODEINFO[] modes)
-        {
-            var newPaths = new System.Collections.Generic.List<PATH>();
-            var newModes = new System.Collections.Generic.List<MODEINFO>();
-
-            foreach (int i in keep)
-            {
-                PATH p = paths[i];
-                if (p.source.modeInfoIdx >= modes.Length || p.target.modeInfoIdx >= modes.Length)
-                    return "mode index out of range";
-
-                MODEINFO source = modes[p.source.modeInfoIdx];
-                MODEINFO target = modes[p.target.modeInfoIdx];
-                source.pad = source.pad ?? new byte[48];
-                target.pad = target.pad ?? new byte[48];
-
-                p.source.modeInfoIdx = (uint)newModes.Count;
-                newModes.Add(source);
-                p.target.modeInfoIdx = (uint)newModes.Count;
-                newModes.Add(target);
-                newPaths.Add(p);
-            }
-
-            int rc = SetDisplayConfig((uint)newPaths.Count, newPaths.ToArray(),
-                (uint)newModes.Count, newModes.ToArray(),
-                0x80 | 0x10 | 0x400 | 0x200); // APPLY | USE_SUPPLIED | ALLOW_CHANGES | SAVE
-            return rc == 0 ? "ok" : "SetDisplayConfig " + rc;
-        }
-
+        
         // Brings a detached virtual monitor back. QueryDisplayConfig with QDC_ALL_PATHS also
         // returns the paths that are currently off, so flipping the active bit is enough.
-        public static string Attach(string tag)
-        {
-            uint np, nm;
-            if (GetDisplayConfigBufferSizes(0, out np, out nm) != 0) return "buffer sizes";
-            var paths = new PATH[np];
-            var modes = new MODEINFO[nm];
-            for (int i = 0; i < modes.Length; i++) modes[i].pad = new byte[48];
-            if (QueryDisplayConfig(0, ref np, paths, ref nm, modes, IntPtr.Zero) != 0) return "query failed";
-
-            int found = -1;
-            for (int i = 0; i < np; i++)
-            {
-                var n = new TGTNAME();
-                n.header.type = 2;
-                n.header.size = (uint)Marshal.SizeOf(typeof(TGTNAME));
-                n.header.adapterId = paths[i].target.adapterId;
-                n.header.id = paths[i].target.id;
-                if (DisplayConfigGetDeviceInfo(ref n) != 0) continue;
-                if (n.path.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0) { found = i; break; }
-            }
-            if (found < 0) return "the driver does not offer the display";
-            if ((paths[found].flags & 1) != 0) return "ok"; // already active
-
-            paths[found].flags |= 1; // DISPLAYCONFIG_PATH_ACTIVE
-            paths[found].target.targetAvailable = 1;
-            var all = new System.Collections.Generic.List<int>();
-            for (int i = 0; i < np; i++) all.Add(i);
-            return Apply(all, paths, modes);
-        }
-
+        
         public static void GetScaleRange(string tag, out int min, out int cur, out int max)
         {
             min = 0; cur = 0; max = 0;

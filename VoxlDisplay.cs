@@ -225,6 +225,45 @@ namespace VoxlDisplay
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
     }
+    // The stock flat Button draws its caption a few pixels off centre (measured 8 design px
+    // high at 150 %). This paints the caption itself, vertically centred in the client area.
+    internal sealed class FlatButton : Button
+    {
+        public FlatButton()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
+                | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            FlatStyle = FlatStyle.Flat;
+            FlatAppearance.BorderSize = 0;
+        }
+
+        private bool _over, _down;
+
+        protected override void OnMouseEnter(EventArgs e) { _over = true; Invalidate(); base.OnMouseEnter(e); }
+        protected override void OnMouseLeave(EventArgs e) { _over = false; _down = false; Invalidate(); base.OnMouseLeave(e); }
+        protected override void OnMouseDown(MouseEventArgs e) { _down = true; Invalidate(); base.OnMouseDown(e); }
+        protected override void OnMouseUp(MouseEventArgs e) { _down = false; Invalidate(); base.OnMouseUp(e); }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            Color back = BackColor;
+            if (!Enabled) back = Color.FromArgb(
+                (int)(back.R * 0.75), (int)(back.G * 0.75), (int)(back.B * 0.75));
+            else if (_down) back = Color.FromArgb(
+                Math.Min(255, back.R + 18), Math.Min(255, back.G + 18), Math.Min(255, back.B + 18));
+            else if (_over) back = Color.FromArgb(
+                Math.Min(255, back.R + 10), Math.Min(255, back.G + 10), Math.Min(255, back.B + 10));
+
+            using (var fill = new SolidBrush(back))
+                g.FillRectangle(fill, ClientRectangle);
+
+            Color ink = Enabled ? ForeColor : Color.FromArgb(130, 130, 140);
+            TextRenderer.DrawText(g, Text, Font, ClientRectangle, ink,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
+
     internal sealed class MainForm : Form
     {
         [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -247,13 +286,13 @@ namespace VoxlDisplay
         private readonly TextBox _password = new TextBox();
         private readonly Label _status = new Label();
         private readonly Label _hint = new Label();
-        private readonly Button _start = new Button();
-        private readonly Button _stop = new Button();
-        private readonly Button _copy = new Button();
-        private readonly Button _qr = new Button();
-        private readonly Button _reset = new Button();
-        private readonly Button _reload = new Button();
-        private readonly Button _install = new Button();
+        private readonly Button _start = new FlatButton();
+        private readonly Button _stop = new FlatButton();
+        private readonly Button _copy = new FlatButton();
+        private readonly Button _qr = new FlatButton();
+        private readonly Button _reset = new FlatButton();
+        private readonly Button _reload = new FlatButton();
+        private readonly Button _install = new FlatButton();
         private readonly NotifyIcon _tray;
         private Process _voxl;
         private bool _busy;
@@ -274,6 +313,7 @@ namespace VoxlDisplay
             // form laid out in 96 dpi units. Scaling is done by hand instead, from the
             // window's real DPI once it exists.
             AutoScaleMode = AutoScaleMode.None;
+            AdjustFontsToDpi();
             Text = "Voxl Display - second monitor";
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -285,7 +325,7 @@ namespace VoxlDisplay
 
             var title = new Label();
             title.Text = "Second monitor for your tablet";
-            title.Font = new Font("Segoe UI Semibold", 15f);
+            title.Font = new Font("Segoe UI Semibold", 15f * _pt);
             title.AutoSize = true;
             title.Location = new Point(26, 16);
             Controls.Add(title);
@@ -414,7 +454,7 @@ namespace VoxlDisplay
             b.FlatAppearance.BorderSize = 0;
             b.TextAlign = ContentAlignment.MiddleCenter;
             // native flat buttons draw the caption a touch high; nudge it to the middle
-            b.Padding = new Padding(0, (int)Math.Round(8 * DeviceDpi / 96.0), 0, 0);
+
             b.UseVisualStyleBackColor = false;
             Controls.Add(b);
         }
@@ -451,19 +491,17 @@ namespace VoxlDisplay
         // handle exists, so the one-time scale happens here; doing it in the constructor
         // left the window at 1:1 while the fonts grew with the DPI, which is what made
         // every row look crammed.
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            if (_scaled) return;
-            _scaled = true;
-            float f = GetDpiForWindow(Handle) / 96f;
-            if (f <= 1.05f) return;
-            SuspendLayout();
-            Scale(new SizeF(f, f));
-            ClientSize = new Size((int)(640 * f), (int)(742 * f));
-            ResumeLayout(true);
-        }
+        // The window keeps its design size in device pixels (the size that was asked for).
+        // Fonts are in points and would grow with the DPI, so they are scaled down by the
+        // same factor; the layout and the text then keep the proportions they were drawn for.
+        private float _pt = 1f;
 
+        private void AdjustFontsToDpi()
+        {
+            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+                _pt = 96f / g.DpiX;
+            Font = new Font("Segoe UI", 9.75f * _pt);
+        }
         private void ScaleToDpi()
         {
             if (DeviceDpi > 96)
@@ -483,7 +521,7 @@ namespace VoxlDisplay
         {
             var l = new Label();
             l.Text = text.ToUpperInvariant();
-            l.Font = new Font("Segoe UI Semibold", 7.5f);
+            l.Font = new Font("Segoe UI Semibold", 7.5f * _pt);
             l.ForeColor = Color.FromArgb(100, 100, 112);
             l.AutoSize = true;
             l.Location = new Point(26, y);

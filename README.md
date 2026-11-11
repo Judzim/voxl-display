@@ -131,12 +131,12 @@ The app has no dependency on voxl's source: it composes a command line and start
 ## How it fits together
 
 ```
-VoxlDisplay.exe  Ã¢â€â‚¬Ã¢â€â‚¬ sets the monitor mode and DPI, starts voxl.exe
-      Ã¢â€â€š
-voxl.exe         Ã¢â€â‚¬Ã¢â€â‚¬ DXGI desktop duplication of the virtual monitor
-      Ã¢â€â€š             H.264 (x264) Ã¢â€ â€™ WebSocket over TLS
-      Ã¢â€“Â¼
-tablet browser   Ã¢â€â‚¬Ã¢â€â‚¬ WebCodecs decode, draws the desktop, sends input back
+VoxlDisplay.exe  ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ sets the monitor mode and DPI, starts voxl.exe
+      ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡
+voxl.exe         ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ DXGI desktop duplication of the virtual monitor
+      ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡             H.264 (x264) ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ WebSocket over TLS
+      ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¼
+tablet browser   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ WebCodecs decode, draws the desktop, sends input back
 ```
 
 The virtual monitor is a normal device node (`ROOT\DISPLAY\0000`, hardware id
@@ -155,6 +155,9 @@ survives a reboot as long as the driver stays installed.
 
 - One virtual monitor, index 2 in voxl's list (primary, then the physical displays, then
   the virtual one). The app works the index out from the current layout.
+- On a fresh install Windows places the virtual monitor somewhere of its own choosing
+  (usually below the primary). Drag it where you want in Display Settings once; the
+  position is remembered.
 - A custom resolution must be advertised by the driver. To add one, edit
   `C:\VirtualDisplayDriver\vdd_settings.xml` and restart the display.
 - The stream pauses while the PC is locked: Windows does not allow desktop duplication

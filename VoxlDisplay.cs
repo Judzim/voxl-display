@@ -25,6 +25,25 @@ namespace VoxlDisplay
         private static void Main()
         {
             try { SetProcessDPIAware(); } catch { }
+
+            // --device on|off switches the virtual monitor at the device level. The window
+            // uses the same call for Stop, and it is handy from a script.
+            var argv = Environment.GetCommandLineArgs();
+            for (int i = 1; i < argv.Length - 1; i++)
+            {
+                if (argv[i] != "--device") continue;
+                string result = Display.SetDeviceEnabled(argv[i + 1] == "on");
+                // a winexe has no console: leave the answer in a file next to the exe
+                try
+                {
+                    System.IO.File.WriteAllText(
+                        System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.ExecutablePath), "device-switch.log"),
+                        result);
+                }
+                catch { }
+                Environment.Exit(result == "ok" ? 0 : 1);
+            }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.ThreadException += delegate(object s, System.Threading.ThreadExceptionEventArgs e)
@@ -545,6 +564,15 @@ namespace VoxlDisplay
             {
                 Status("applying display settings...", false);
 
+                // The monitor may be switched off from a previous Stop; bring it back first.
+                if (_device == null || Display.FindDeviceName(MonitorTag) == null)
+                {
+                    string enabled = Display.SetDeviceEnabled(true);
+                    if (enabled != "ok") { Status("could not enable the virtual display: " + enabled, true); return; }
+                }
+                _device = Display.FindDeviceName(MonitorTag);
+                if (_device == null) { Status("the virtual display did not come back", true); return; }
+
                 int w, h;
                 if (!Display.ParseMode(_resolution.Text.Trim(), out w, out h))
                 {
@@ -609,6 +637,9 @@ namespace VoxlDisplay
                     _s.ScalePercent = pct;
                 }
 
+                string placed = Display.PlaceOnRight(_device);
+                if (placed != "ok") Status("could not place the display: " + placed, true);
+
                 _s.Quality = _quality.SelectedItem as string;
                 _s.Preset = _preset.SelectedItem as string;
                 _s.Crf = (int)_crf.Value;
@@ -649,7 +680,22 @@ namespace VoxlDisplay
         private void StopClicked(object sender, EventArgs e)
         {
             KillVoxl();
-            Status("stopped", false);
+            // Switch the monitor off, otherwise the windows that were opened on it stay
+            // there with no screen to show them.
+            string detached = Display.SetDeviceEnabled(false);
+            if (detached == "ok")
+            {
+                _device = null;
+                _resolution.Items.Clear();
+                _scale.Items.Clear();
+                _install.Visible = true;
+                Status("stopped, the virtual display is disconnected", false);
+                _hint.Text = "Press Start to connect it again.";
+            }
+            else
+            {
+                Status("stopped (the display stayed attached: " + detached + ")", true);
+            }
         }
 
         // Defaults for everything the driver and the stream care about; the local paths
@@ -862,6 +908,7 @@ namespace VoxlDisplay
         [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SRCNM n);
         [DllImport("user32.dll")] private static extern int DisplayConfigGetDeviceInfo(ref SCALE_GET s);
         [DllImport("user32.dll")] private static extern int DisplayConfigSetDeviceInfo(ref SCALE_SET s);
+        [DllImport("user32.dll")] private static extern int SetDisplayConfig(uint np, PATH[] paths, uint nm, MODEINFO[] modes, uint flags);
 
         private static PATH[] Paths()
         {
@@ -986,6 +1033,176 @@ namespace VoxlDisplay
             dm.dmFields = 0x80000 | 0x100000 | 0x40000000;
             int r = ChangeDisplaySettingsExW(dev, ref dm, IntPtr.Zero, 0x00000001, IntPtr.Zero);
             return r == 0 ? "ok" : "ChangeDisplaySettingsEx " + r;
+        }
+
+        // Puts the display to the right of every other attached screen. Windows happily
+        // stacks a new monitor on (0,0), which overlaps the primary and makes both show the
+        // same number, so this runs after every start.
+        public static string PlaceOnRight(string dev)
+        {
+            int right = 0;
+            PATH[] paths = Paths();
+            if (paths != null)
+            {
+                for (int i = 0; i < paths.Length; i++)
+                {
+                    var s = new SRCNM();
+                    s.header.type = 1;
+                    s.header.size = (uint)Marshal.SizeOf(typeof(SRCNM));
+                    s.header.adapterId = paths[i].source.adapterId;
+                    s.header.id = paths[i].source.id;
+                    if (DisplayConfigGetDeviceInfo(ref s) != 0) continue;
+                    if (s.gdi == dev) continue;
+                    var dm = new DEVMODE();
+                    dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+                    if (!EnumDisplaySettingsW(s.gdi, -1, ref dm)) continue;
+                    int edge = dm.dmPositionX + dm.dmPelsWidth;
+                    if (edge > right) right = edge;
+                }
+            }
+
+            var move = new DEVMODE();
+            move.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+            if (!EnumDisplaySettingsW(dev, -1, ref move)) return "no current mode";
+            if (move.dmPositionX == right && move.dmPositionY == 0) return "ok";
+            move.dmPositionX = right;
+            move.dmPositionY = 0;
+            move.dmFields = 0x20; // DM_POSITION
+            int r = ChangeDisplaySettingsExW(dev, ref move, IntPtr.Zero, 0x00000001, IntPtr.Zero);
+            return r == 0 ? "ok" : "position " + r;
+        }
+
+        // Turning the device node off is the only reliable way to detach a virtual monitor
+        // on every Windows build: SetDisplayConfig refuses the supplied configuration for
+        // these drivers (ERROR_INVALID_PARAMETER). Windows moves the windows back to the
+        // remaining screens when the monitor disappears.
+        public static string SetDeviceEnabled(bool on)
+        {
+            var dev = new List<PnpDevice>();
+            // (System.Management is referenced below)
+            foreach (System.Management.ManagementObject o in new System.Management.ManagementObjectSearcher(
+                "SELECT * FROM Win32_PnPEntity WHERE Name LIKE '%Virtual Display Driver%'").Get())
+            {
+                dev.Add(new PnpDevice { Id = (string)o["DeviceID"], Name = (string)o["Name"] });
+            }
+            if (dev.Count == 0) return "the virtual display device was not found";
+
+            foreach (var d in dev)
+            {
+                var psi = new ProcessStartInfo("pnputil.exe", (on ? "/enable-device \"" : "/disable-device \"") + d.Id + "\"");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                try
+                {
+                    Process p = Process.Start(psi);
+                    p.WaitForExit();
+                    if (p.ExitCode != 0) return "pnputil exited with " + p.ExitCode + " (run the app as administrator)";
+                }
+                catch (Exception e)
+                {
+                    return e.Message;
+                }
+            }
+            System.Threading.Thread.Sleep(on ? 2500 : 1200);
+            return "ok";
+        }
+
+        private sealed class PnpDevice { public string Id; public string Name; }
+
+        // Detaches the virtual monitor from the desktop, so Windows moves the windows that
+        // were on it back to the remaining screens. The driver stays installed.
+        public static string Detach(string tag)
+        {
+            uint np, nm;
+            if (GetDisplayConfigBufferSizes(2, out np, out nm) != 0) return "buffer sizes";
+            if (np <= 1) return "it is the only display";
+            var paths = new PATH[np];
+            var modes = new MODEINFO[nm];
+            for (int i = 0; i < modes.Length; i++) modes[i].pad = new byte[48];
+            if (QueryDisplayConfig(2, ref np, paths, ref nm, modes, IntPtr.Zero) != 0) return "query failed";
+
+            int found = -1;
+            for (int i = 0; i < np; i++)
+            {
+                var n = new TGTNAME();
+                n.header.type = 2;
+                n.header.size = (uint)Marshal.SizeOf(typeof(TGTNAME));
+                n.header.adapterId = paths[i].target.adapterId;
+                n.header.id = paths[i].target.id;
+                if (DisplayConfigGetDeviceInfo(ref n) != 0) continue;
+                if (n.path.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0) { found = i; break; }
+            }
+            if (found < 0) return "it is not attached";
+
+            var keep = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < np; i++) if (i != found) keep.Add(i);
+            return Apply(keep, paths, modes);
+        }
+
+        // SetDisplayConfig wants a mode array that matches the paths exactly, so the modes
+        // each kept path points at are copied into a new array and the indices rewritten.
+        // Passing the original array unchanged returns ERROR_INVALID_PARAMETER (87).
+        private static string Apply(System.Collections.Generic.List<int> keep, PATH[] paths, MODEINFO[] modes)
+        {
+            var newPaths = new System.Collections.Generic.List<PATH>();
+            var newModes = new System.Collections.Generic.List<MODEINFO>();
+
+            foreach (int i in keep)
+            {
+                PATH p = paths[i];
+                if (p.source.modeInfoIdx >= modes.Length || p.target.modeInfoIdx >= modes.Length)
+                    return "mode index out of range";
+
+                MODEINFO source = modes[p.source.modeInfoIdx];
+                MODEINFO target = modes[p.target.modeInfoIdx];
+                source.pad = source.pad ?? new byte[48];
+                target.pad = target.pad ?? new byte[48];
+
+                p.source.modeInfoIdx = (uint)newModes.Count;
+                newModes.Add(source);
+                p.target.modeInfoIdx = (uint)newModes.Count;
+                newModes.Add(target);
+                newPaths.Add(p);
+            }
+
+            int rc = SetDisplayConfig((uint)newPaths.Count, newPaths.ToArray(),
+                (uint)newModes.Count, newModes.ToArray(),
+                0x80 | 0x10 | 0x400 | 0x200); // APPLY | USE_SUPPLIED | ALLOW_CHANGES | SAVE
+            return rc == 0 ? "ok" : "SetDisplayConfig " + rc;
+        }
+
+        // Brings a detached virtual monitor back. QueryDisplayConfig with QDC_ALL_PATHS also
+        // returns the paths that are currently off, so flipping the active bit is enough.
+        public static string Attach(string tag)
+        {
+            uint np, nm;
+            if (GetDisplayConfigBufferSizes(0, out np, out nm) != 0) return "buffer sizes";
+            var paths = new PATH[np];
+            var modes = new MODEINFO[nm];
+            for (int i = 0; i < modes.Length; i++) modes[i].pad = new byte[48];
+            if (QueryDisplayConfig(0, ref np, paths, ref nm, modes, IntPtr.Zero) != 0) return "query failed";
+
+            int found = -1;
+            for (int i = 0; i < np; i++)
+            {
+                var n = new TGTNAME();
+                n.header.type = 2;
+                n.header.size = (uint)Marshal.SizeOf(typeof(TGTNAME));
+                n.header.adapterId = paths[i].target.adapterId;
+                n.header.id = paths[i].target.id;
+                if (DisplayConfigGetDeviceInfo(ref n) != 0) continue;
+                if (n.path.IndexOf(tag, StringComparison.OrdinalIgnoreCase) >= 0) { found = i; break; }
+            }
+            if (found < 0) return "the driver does not offer the display";
+            if ((paths[found].flags & 1) != 0) return "ok"; // already active
+
+            paths[found].flags |= 1; // DISPLAYCONFIG_PATH_ACTIVE
+            paths[found].target.targetAvailable = 1;
+            var all = new System.Collections.Generic.List<int>();
+            for (int i = 0; i < np; i++) all.Add(i);
+            return Apply(all, paths, modes);
         }
 
         public static void GetScaleRange(string tag, out int min, out int cur, out int max)

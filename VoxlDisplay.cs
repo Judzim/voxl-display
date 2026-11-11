@@ -216,7 +216,7 @@ namespace VoxlDisplay
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(640, 700);
+            ClientSize = new Size(640, 724);
             BackColor = Color.FromArgb(23, 23, 27);
             ForeColor = Color.FromArgb(235, 235, 240);
             Font = new Font("Segoe UI", 9.75f);
@@ -232,96 +232,97 @@ namespace VoxlDisplay
             sub.Text = "Virtual display plus the voxl stream, LAN only.";
             sub.ForeColor = Color.FromArgb(140, 140, 150);
             sub.AutoSize = true;
-            sub.Location = new Point(28, 52);
+            sub.Location = new Point(28, 54);
             Controls.Add(sub);
 
-            Section("Display", 88);
+            Section("Display", 92);
 
-            AddLabel("Resolution", 26, 112);
-            Combo(_resolution, 26, 134, 260);
+            AddLabel("Resolution", 26, 116);
+            Combo(_resolution, 26, 142, 260);
             _resolution.DropDownStyle = ComboBoxStyle.DropDown;
             Controls.Add(_resolution);
 
-            AddLabel("Scaling", 306, 112);
-            Combo(_scale, 306, 134, 260);
+            AddLabel("Scaling", 306, 116);
+            Combo(_scale, 306, 142, 260);
             Controls.Add(_scale);
 
-            Section("Stream", 186);
+            Section("Stream", 196);
 
-            AddLabel("Quality", 26, 210);
-            Combo(_quality, 26, 232, 260);
+            AddLabel("Quality", 26, 220);
+            Combo(_quality, 26, 246, 260);
             foreach (string q in QualityNames) _quality.Items.Add(q);
             _quality.SelectedIndexChanged += QualityChanged;
             Controls.Add(_quality);
 
-            AddLabel("Encoder preset (latency)", 306, 210);
-            Combo(_preset, 306, 232, 260);
+            AddLabel("Encoder preset (latency)", 306, 220);
+            Combo(_preset, 306, 246, 260);
             foreach (string p in PresetNames) _preset.Items.Add(p);
             Controls.Add(_preset);
 
-            AddLabel("CRF", 26, 274);
-            Number(_crf, 26, 296, 110, 10, 40);
+            AddLabel("CRF", 26, 292);
+            Number(_crf, 26, 318, 110, 10, 40);
             Controls.Add(_crf);
 
-            AddLabel("Max Mbps", 156, 274);
-            Number(_maxMbps, 156, 296, 130, 5, 2000);
+            AddLabel("Max Mbps", 156, 292);
+            Number(_maxMbps, 156, 318, 130, 5, 2000);
             Controls.Add(_maxMbps);
 
-            AddLabel("FPS", 306, 274);
-            Combo(_fps, 306, 296, 100);
+            AddLabel("FPS", 306, 292);
+            Combo(_fps, 306, 318, 110);
             foreach (int f in new[] { 30, 50, 60, 90, 120 }) _fps.Items.Add(f.ToString());
             Controls.Add(_fps);
 
-            AddLabel("Threads", 426, 274);
-            Number(_threads, 426, 296, 140, 1, 32);
+            AddLabel("Threads", 436, 292);
+            Number(_threads, 436, 318, 130, 1, 32);
             Controls.Add(_threads);
 
-            Check(_clipboard, "Clipboard", 26, 342);
-            Check(_audio, "Audio", 130, 342);
-            Check(_readOnly, "Read-only viewer", 210, 342);
+            Check(_clipboard, "Clipboard", 26, 372, 132);
+            Check(_audio, "Audio", 176, 372, 96);
+            Check(_readOnly, "Read-only viewer", 290, 372, 190);
 
-            Section("Access", 380);
+            Section("Access", 416);
 
-            AddLabel("Password (type it on the tablet)", 26, 404);
-            _password.Location = new Point(26, 426);
-            _password.Size = new Size(300, 26);
+            AddLabel("Password (type it on the tablet)", 26, 440);
+            _password.Location = new Point(26, 466);
+            _password.Size = new Size(294, 26);
             _password.BackColor = Color.FromArgb(35, 35, 42);
             _password.ForeColor = Color.White;
             _password.BorderStyle = BorderStyle.FixedSingle;
             Controls.Add(_password);
 
-            Button(_qr, "QR code", 338, 424, Color.FromArgb(48, 48, 58), 100);
+            Button(_qr, "QR code", 336, 464, Color.FromArgb(48, 48, 58), 124);
             _qr.Click += QrClicked;
-            Button(_copy, "Copy link", 446, 424, Color.FromArgb(48, 48, 58), 120);
+            Button(_copy, "Copy link", 470, 464, Color.FromArgb(48, 48, 58), 124);
             _copy.Click += CopyClicked;
 
             var who = new Label();
             who.Text = "Username: any (leave it empty or type anything)";
             who.AutoSize = true;
-            who.Location = new Point(28, 456);
+            who.Location = new Point(28, 500);
             who.ForeColor = Color.FromArgb(120, 160, 140);
             Controls.Add(who);
 
-            Button(_start, "Start", 26, 492, Color.FromArgb(58, 158, 96), 150);
+            Button(_start, "Start", 26, 540, Color.FromArgb(58, 158, 96), 132);
             _start.Click += StartClicked;
-            Button(_stop, "Stop", 186, 492, Color.FromArgb(48, 48, 58), 150);
+            Button(_stop, "Stop", 168, 540, Color.FromArgb(48, 48, 58), 132);
             _stop.Click += StopClicked;
-            Button(_reset, "Defaults", 346, 492, Color.FromArgb(48, 48, 58), 100);
+            Button(_reset, "Defaults", 310, 540, Color.FromArgb(48, 48, 58), 132);
             _reset.Click += ResetClicked;
-            Button(_reload, "Reload", 454, 492, Color.FromArgb(48, 48, 58), 112);
+            Button(_reload, "Reload", 452, 540, Color.FromArgb(48, 48, 58), 132);
             _reload.Click += delegate { LoadDisplays(); ApplySettings(); };
-            Button(_install, "Install driver", 26, 544, Color.FromArgb(58, 158, 96), 170);
+
+            Button(_install, "Install driver", 26, 594, Color.FromArgb(58, 158, 96), 170);
             _install.Click += InstallDriverClicked;
 
             _status.Text = "stopped";
-            _status.Location = new Point(26, 590);
+            _status.Location = new Point(26, 640);
             _status.Size = new Size(560, 22);
             _status.ForeColor = Color.FromArgb(150, 150, 160);
             Controls.Add(_status);
 
             _hint.Text = "";
-            _hint.Location = new Point(26, 612);
-            _hint.Size = new Size(560, 40);
+            _hint.Location = new Point(26, 664);
+            _hint.Size = new Size(560, 44);
             _hint.ForeColor = Color.FromArgb(110, 110, 120);
             Controls.Add(_hint);
             _tray = new NotifyIcon();
@@ -349,11 +350,13 @@ namespace VoxlDisplay
             Controls.Add(b);
         }
 
-        private void Check(CheckBox c, string text, int x, int y)
+        // Fixed width: with AutoSize three of them push into each other at higher DPI.
+        private void Check(CheckBox c, string text, int x, int y, int width)
         {
             c.Text = text;
             c.Location = new Point(x, y);
-            c.AutoSize = true;
+            c.Size = new Size(width, 26);
+            c.AutoSize = false;
             c.ForeColor = Color.FromArgb(200, 200, 210);
             Controls.Add(c);
         }
@@ -377,7 +380,7 @@ namespace VoxlDisplay
                 float f = DeviceDpi / 96f;
                 SuspendLayout();
                 Scale(new SizeF(f, f));
-                ClientSize = new Size((int)(640 * f), (int)(700 * f));
+                ClientSize = new Size((int)(640 * f), (int)(724 * f));
                 ResumeLayout(true);
             }
             if (!File.Exists(_s.VoxlPath))

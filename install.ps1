@@ -69,7 +69,7 @@ if ($monitor) {
     if (-not (Test-Path $driverScript)) { $driverScript = Join-Path (Split-Path $Source -Parent) "install-vdd.ps1" }
     if (-not (Test-Path $driverScript)) { throw "install-vdd.ps1 is missing next to install.ps1" }
     Write-Step "installing the virtual display driver (a few seconds)"
-    & $driverScript -VendorDir (Join-Path $Source "vendor")
+    & $driverScript -VendorDir (Join-Path $Source "vendor") -Settings (Join-Path $Source "vdd_settings.xml")
     if (-not $?) { throw "the virtual display driver did not install, see the messages above" }
 }
 
@@ -107,8 +107,8 @@ Write-Host "The password is in the app; the tablet opens https://<this-PC-IP>:69
 # SIG # Begin signature block
 # MIIHYwYJKoZIhvcNAQcCoIIHVDCCB1ACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCB1V6qsaYb5U0+d
-# Ak31pruyLe8z/gmAJDxF1ZL4K3NpBqCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCBrWebBnnS3UNq5
+# CnzgcshuW/z5tFNJXjId1TKjdVUQPKCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
 # o08oGq2g8HmKMA0GCSqGSIb3DQEBCwUAMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQK
 # DAxWb3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbTAeFw0yNjExMTExNzIwMzRa
 # Fw0zNjExMTExNzMwMzRaMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQKDAxWb3hsIERp
@@ -135,14 +135,14 @@ Write-Host "The password is in the app; the tablet opens https://<this-PC-IP>:69
 # b3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbQIQLwynnK9BBqNPKBqtoPB5ijAN
 # BglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqG
 # SIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3
-# AgEVMC8GCSqGSIb3DQEJBDEiBCB+Azbbxt8P4vSA99idcJjkmylFPOiuQdrOj9IF
-# EP/dZjANBgkqhkiG9w0BAQEFAASCAYCRwk4ztEqr4qCZi+HRwyTsudVhDaaorWXH
-# dlRZtT398PIHugscYvVgNWhThlijFrWO5qiQP9k2vcg3LobvsAjQh69CfMu016Dh
-# Iem0vDmwovqjrYw4mxsNDOnnTWFjQsUlQMDip698loDCnQbFWKlaPjBE39WJe5Xd
-# zdi3OUe1CoOc/3P3xraREik9gWSx0QsHhr6RgNeJhtel1CXyXJtinD68wI5UT/8h
-# CFFsHbBvpdqz8iYbjQ9lRruDxJUHkrvwgJjOkC7Q+tYElla+JljMI0IZBXvpVLeu
-# 6e2ng5K9YoP6mu5b+KNVaXNZjVhCLRMjdfRCAegFIcacdWUBwApNyTjljE+HH84n
-# lBNzrATqGpRykmckzRY/Uf23w9J/AmjAtKsFZM233Ai6nSxIe0RKaXv2O4wOI3QK
-# VwMTvcEQUk7XWSxrWJRNZvt5HbuCAq7LIZXpcRqKHyZoixBvm9SXo1gTQResqApP
-# BLtu/ZRvNoA3tXpaBHXa9HeDGEVh01k=
+# AgEVMC8GCSqGSIb3DQEJBDEiBCCzK1xZspY23qFh1QfVfJwE7ptJMae4RmYYZTlr
+# iNZmTjANBgkqhkiG9w0BAQEFAASCAYBdOzhTfT/LBSzd2Dnc6FkAo8FHQV5Aent5
+# y9H0PxlCRpiGiasQ5/5QNl/u0iR8xeKEHOrnKGWmwtH8T+d/He89kN3KCFFXleoo
+# 3FDLbVvr2KPWyE0k8hETr0VxZh2FylT0UjZV0s0NEb3WQB/27qGlh5URiIas/oiT
+# x9KZPyeC34nP/K3Bv9xWVpa8Ooh9sLSMXb+SNLvPoR3B9GDIV+luBlBdIMTJUTmI
+# mXumzKtOBr18GrKOKIAVG8mp2FjgDbK+661m+6K/twdJ96e4nW5AGuDUuMVcOeGe
+# 2A319rgr74ePa1yt74RKMrTKKvWj/2v7o2/wWGF/OqCC4biZcJHEMe0dGk9rsGsQ
+# CO/FGmkj/zyF0SUCRVNYclfbYZGhBUuci/71vYn4Ahg1lUHKySk+vIEdaxEaShCw
+# M+ibKyfyn/dnAZ8p+zyJLsUIFq47haJZtORw6XQCmSJrpOByfv/UuQasxMikDUZC
+# UQWfpH9O7FlOpcR7zkBB6jmcSCtVf0w=
 # SIG # End signature block

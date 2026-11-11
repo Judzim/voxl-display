@@ -100,14 +100,22 @@ if ($Settings -and (Test-Path $Settings)) {
 & $nefcon install (Join-Path $DriverDir "MttVDD.inf") "Root\MttVDD"
 Start-Sleep -Seconds 8
 
-# 6. Report.
+# 6. Restart an existing device node so the driver re-reads the mode list.
+$node = Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -eq "Virtual Display Driver" }
+foreach ($n in $node) {
+    pnputil /restart-device "$($n.InstanceId)" | Out-Null
+    "restarted $($n.InstanceId) to pick up the mode list"
+}
+Start-Sleep -Seconds 3
+
+# 7. Report.
 Get-PnpDevice -Class Monitor -PresentOnly | Format-Table FriendlyName, Status, InstanceId -AutoSize
 
 # SIG # Begin signature block
 # MIIHYwYJKoZIhvcNAQcCoIIHVDCCB1ACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDm8gB59wGBo6NF
-# 3oQYHooB/18WPAMS5NgdQ1bhoXseDqCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDJsWMhWiSYt3Ln
+# 1TGjNXmZNtiBXB0q1ft7Fp23OoI+aKCCBD4wggQ6MIICoqADAgECAhAvDKecr0EG
 # o08oGq2g8HmKMA0GCSqGSIb3DQEBCwUAMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQK
 # DAxWb3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbTAeFw0yNjExMTExNzIwMzRa
 # Fw0zNjExMTExNzMwMzRaMDUxCzAJBgNVBAYTAlNLMRUwEwYDVQQKDAxWb3hsIERp
@@ -134,14 +142,14 @@ Get-PnpDevice -Class Monitor -PresentOnly | Format-Table FriendlyName, Status, I
 # b3hsIERpc3BsYXkxDzANBgNVBAMMBkp1ZHppbQIQLwynnK9BBqNPKBqtoPB5ijAN
 # BglghkgBZQMEAgEFAKCBhDAYBgorBgEEAYI3AgEMMQowCKACgAChAoAAMBkGCSqG
 # SIb3DQEJAzEMBgorBgEEAYI3AgEEMBwGCisGAQQBgjcCAQsxDjAMBgorBgEEAYI3
-# AgEVMC8GCSqGSIb3DQEJBDEiBCAeelaHW34CqGQN8KNOfe4HT4qirnX66+7ML7MZ
-# MLm3pTANBgkqhkiG9w0BAQEFAASCAYBOb40Ae7PDo72teyg1oesjc5Glb8F9ZLYS
-# o2VF22whYC4BcGIgRBfnANkiypkiMvjAoxwMEZDe0n5VBJIFi/B3287l1J9Y+iBy
-# 2ytpuUJ6zkpd43FW56QCyhS+ucKSM9aIITVDdQcEIMAQi/yHIrd4Pf5P53XqdxHY
-# rFsaWm3ThVsHWyrhUgrMk/nYAR6ntm0prUIyXemMUt74ov7xocLAoDVHkrrvKFrz
-# PeXXz26UwPrBrmJVkhqJKtxjMQOzwXaOTxRwiX7baN4cfOaflYoNaeFo7D0nklG4
-# ptspyEM7eXSILuNwK0uMjqSdzSJhJiUqU+JHJIZ93dOKCDCvwFmQluyBgo9pXvOf
-# YKyHBlB8U48ht7UHG71FZjw1Ifb1nH3R/Vz/Kazohylajmz3mcp5SF2hUJm53hXL
-# P5xSWzGdmkjc3Jvv+AFXN4dCxeG8iga2YO5IkLNpHWSJfDOCynUo1wr+4sG+iTeu
-# +LCKKDKWjeLyWN63GU3NrPeT7VtvI28=
+# AgEVMC8GCSqGSIb3DQEJBDEiBCAVoJlhBzz6ELETixydwInmasGG18kGsmT6kH8O
+# D6sPJTANBgkqhkiG9w0BAQEFAASCAYA0YbhCfJuBZtRyXeR+LitjKaWS5lTLNagW
+# uZwZ7MUN8CFSDPvqy2Lg0QU9CyUqqZGJXaUUNb8uBK9Rt5koTEE6W6huii64+YbD
+# yrzYAqNYcaC+5iEoDW4bo6B9EkjKk/K5PtbxRSTUiW8lBMBdWNtEBVmZOfhvkq9h
+# Xe68qKkY1D40UKunnWeirZ1QeZSFL1eUXN+mbxP2C0zzx3lusG3v7g0iRJpFLhXM
+# HpEEQ2M5qgYhrQEkhC9GFj42Nn1b1hXj9pDyJ8GvH2OzvBkqYojXung4d9G/y35d
+# p/GIOEEJETAhIWjFMVPjKOcbhFAjtsY2LaBdip73s4nW2YNiJeN/E1Wa1ts0RDTt
+# xz2G8Wu2y+GuQMYMbZKO0c9K7yZfqtXBjoCIz2IE8a7COpkfhd/kiu0vCOfba7AW
+# yHMDX6mJDy7UJU6O3If8WBBOIWNrmNv+cOxAeb10Fsi2eKimLrHzqwm+fyTmLtF7
+# jZFYDqm6Vnkkh/vrQ2kMisH0O8b/ZdI=
 # SIG # End signature block

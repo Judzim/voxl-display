@@ -842,6 +842,14 @@ namespace VoxlDisplay
             return w >= 320 && h >= 200 && w <= 8192 && h <= 8192;
         }
 
+        public static string CurrentMode(string dev)
+        {
+            var dm = new DEVMODE();
+            dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+            if (!EnumDisplaySettingsW(dev, -1, ref dm)) return "";
+            return dm.dmPelsWidth + "x" + dm.dmPelsHeight;
+        }
+
         public static string SetMode(string dev, int w, int h, int hz)
         {
             var dm = new DEVMODE();

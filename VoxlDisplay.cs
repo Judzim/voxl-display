@@ -564,6 +564,10 @@ namespace VoxlDisplay
             {
                 Status("applying display settings...", false);
 
+                // Whatever Windows does to the other monitors while the virtual one appears,
+                // it is put back at the end of this method.
+                List<Display.Snapshot> before = Display.TakeSnapshot();
+
                 // The monitor may be switched off from a previous Stop; bring it back first.
                 if (_device == null || Display.FindDeviceName(MonitorTag) == null)
                 {
@@ -640,6 +644,9 @@ namespace VoxlDisplay
                 string placed = Display.PlaceOnRight(_device);
                 if (placed != "ok") Status("could not place the display: " + placed, true);
 
+                string restored = Display.RestoreOthers(before, MonitorTag);
+                if (restored != "ok") Status("other displays were changed by Windows, restored: " + restored, false);
+
                 _s.Quality = _quality.SelectedItem as string;
                 _s.Preset = _preset.SelectedItem as string;
                 _s.Crf = (int)_crf.Value;
@@ -687,10 +694,10 @@ namespace VoxlDisplay
             {
                 _device = null;
                 _resolution.Items.Clear();
-                _scale.Items.Clear();
-                _install.Visible = true;
+                _scale.Items.Clear();            // the driver is still installed, only switched off
+                _install.Visible = false;
                 Status("stopped, the virtual display is disconnected", false);
-                _hint.Text = "Press Start to connect it again.";
+                _hint.Text = "The driver stays installed. Press Start to connect it again.";
             }
             else
             {
@@ -1033,6 +1040,99 @@ namespace VoxlDisplay
             dm.dmFields = 0x80000 | 0x100000 | 0x40000000;
             int r = ChangeDisplaySettingsExW(dev, ref dm, IntPtr.Zero, 0x00000001, IntPtr.Zero);
             return r == 0 ? "ok" : "ChangeDisplaySettingsEx " + r;
+        }
+
+        // One attached display: its GDI name, mode and scaling step. Taken before the app
+        // changes anything, so the others can be put back if Windows applies a change to
+        // the wrong screen.
+        public sealed class Snapshot
+        {
+            public string Gdi;
+            public int Width, Height, Hz;
+            public int ScaleIndex;
+        }
+
+        public static List<Snapshot> TakeSnapshot()
+        {
+            var list = new List<Snapshot>();
+            PATH[] paths = Paths();
+            if (paths == null) return list;
+            for (int i = 0; i < paths.Length; i++)
+            {
+                var s = new SRCNM();
+                s.header.type = 1;
+                s.header.size = (uint)Marshal.SizeOf(typeof(SRCNM));
+                s.header.adapterId = paths[i].source.adapterId;
+                s.header.id = paths[i].source.id;
+                if (DisplayConfigGetDeviceInfo(ref s) != 0) continue;
+
+                var dm = new DEVMODE();
+                dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+                if (!EnumDisplaySettingsW(s.gdi, -1, ref dm)) continue;
+
+                var g = new SCALE_GET();
+                g.header.type = -3;
+                g.header.size = (uint)Marshal.SizeOf(typeof(SCALE_GET));
+                g.header.adapterId = paths[i].source.adapterId;
+                g.header.id = paths[i].source.id;
+                int idx = DisplayConfigGetDeviceInfo(ref g) == 0 ? g.cur : int.MinValue;
+
+                list.Add(new Snapshot { Gdi = s.gdi, Width = dm.dmPelsWidth, Height = dm.dmPelsHeight, Hz = dm.dmDisplayFrequency, ScaleIndex = idx });
+            }
+            return list;
+        }
+
+        // Puts every display except the virtual one back to what it was before Start.
+        public static string RestoreOthers(List<Snapshot> before, string tag)
+        {
+            var changed = new List<string>();
+            foreach (Snapshot snap in before)
+            {
+                if (snap.Gdi == null) continue;
+
+                var dm = new DEVMODE();
+                dm.dmSize = (short)Marshal.SizeOf(typeof(DEVMODE));
+                if (!EnumDisplaySettingsW(snap.Gdi, -1, ref dm)) continue; // gone since then
+
+                if (dm.dmPelsWidth != snap.Width || dm.dmPelsHeight != snap.Height || dm.dmDisplayFrequency != snap.Hz)
+                {
+                    string r = SetMode(snap.Gdi, snap.Width, snap.Height, snap.Hz);
+                    changed.Add(snap.Gdi + " " + snap.Width + "x" + snap.Height + (r == "ok" ? "" : " (" + r + ")"));
+                }
+
+                if (snap.ScaleIndex != int.MinValue)
+                {
+                    PATH[] paths = Paths();
+                    if (paths == null) continue;
+                    for (int i = 0; i < paths.Length; i++)
+                    {
+                        var s = new SRCNM();
+                        s.header.type = 1;
+                        s.header.size = (uint)Marshal.SizeOf(typeof(SRCNM));
+                        s.header.adapterId = paths[i].source.adapterId;
+                        s.header.id = paths[i].source.id;
+                        if (DisplayConfigGetDeviceInfo(ref s) != 0 || s.gdi != snap.Gdi) continue;
+
+                        var g = new SCALE_GET();
+                        g.header.type = -3;
+                        g.header.size = (uint)Marshal.SizeOf(typeof(SCALE_GET));
+                        g.header.adapterId = paths[i].source.adapterId;
+                        g.header.id = paths[i].source.id;
+                        if (DisplayConfigGetDeviceInfo(ref g) != 0 || g.cur == snap.ScaleIndex) break;
+
+                        var set = new SCALE_SET();
+                        set.header.type = -4;
+                        set.header.size = (uint)Marshal.SizeOf(typeof(SCALE_SET));
+                        set.header.adapterId = paths[i].source.adapterId;
+                        set.header.id = paths[i].source.id;
+                        set.rel = snap.ScaleIndex;
+                        if (DisplayConfigSetDeviceInfo(ref set) == 0)
+                            changed.Add(s.gdi + " scale " + ScalePercentFor(tag, snap.ScaleIndex) + "%");
+                        break;
+                    }
+                }
+            }
+            return changed.Count == 0 ? "ok" : string.Join(", ", changed.ToArray());
         }
 
         // Puts the display to the right of every other attached screen. Windows happily

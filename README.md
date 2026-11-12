@@ -43,9 +43,20 @@ It is safe to run twice: the driver is only installed when the monitor is absent
 
 ## First run
 
-Open **Voxl Display** from the desktop shortcut.
+Open **Voxl Display** from the desktop shortcut. It starts in **Simple** mode: pick the panel
+your tablet has and how you want it to feel.
 
-| Setting | What it does |
+| Simple mode | What it does |
+|---|---|
+| Your device | the tablet's native panel, for example `1920x1200`. The app picks a driver mode with the same aspect ratio and a DPI scale that lands near 1280 logical pixels. |
+| Smoother | about half the pixels, 60 fps, CRF 24: the lightest stream, for weak Wi-Fi. |
+| Balanced | the panel's pixels, 60 fps, CRF 20. |
+| Sharper | the panel's pixels, 30 fps, CRF 17: more detail per frame, less motion. |
+| Recommend | reads the CPU, the GPU and the gateway round trip, then picks one of the three and explains why. |
+
+Tick **Advanced** for the full set of encoder fields.
+
+| Advanced | What it does |
 |---|---|
 | Display resolution | the virtual monitor's mode. Offered values come from the driver; a custom value is accepted only if the driver advertises it. |
 | Scaling | the monitor's DPI scale (125 % to 225 %). Steps depend on the resolution. |
@@ -57,10 +68,15 @@ Open **Voxl Display** from the desktop shortcut.
 | Encoder threads | x264 slice threads. More threads encode faster, slightly bigger files. |
 | Clipboard / Audio | share the clipboard and the system audio with the tablet. |
 | Read-only viewer | the tablet can watch but not type or click. |
+| Name | what this instance is called in the title bar and in the tray tooltip, for example `Huawei tablet`. One instance is one screen. |
+| Presets | **Presets** saves the whole configuration under a name, and loads or deletes it again. Files live in `presets\` next to the app. |
 
 The defaults are 1920x1080 at 150 %, quality **High** (CRF 20, 60 Mbps), encoder preset
 **Fastest** and 4 threads: a good starting point for a tablet on Wi-Fi. **Defaults** puts
 these values back at any time.
+
+A driver that is installed but switched off (the normal state after a reboot) is recognised:
+the app says so and **Start** reconnects it, it never asks for a reinstall.
 
 Press **Start**. The status line shows the address, and **QR code** opens a scannable
 code for the tablet.

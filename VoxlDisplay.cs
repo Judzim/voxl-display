@@ -77,13 +77,32 @@ namespace VoxlDisplay
         public int Port = 6901;
         public string VoxlPath = "";
         public string Addr = "";
+        // What this instance is called in the tray, the target panel in simple mode and
+        // whether the advanced fields are shown.
+        public string Name = "#1";
+        public string Device = "1920x1200";
+        public string Priority = "balanced";
+        public bool Advanced = false;
 
         private static string FilePath
         {
             get { return Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "settings.json"); }
         }
 
+        public void CopyFrom(Settings o)
+        {
+            Resolution = o.Resolution; ScalePercent = o.ScalePercent; Quality = o.Quality;
+            Preset = o.Preset; Crf = o.Crf; MaxMbps = o.MaxMbps; Fps = o.Fps; Threads = o.Threads;
+            Clipboard = o.Clipboard; Audio = o.Audio; ReadOnly = o.ReadOnly; Password = o.Password;
+            Port = o.Port; Name = o.Name; Device = o.Device; Priority = o.Priority; Advanced = o.Advanced;
+        }
+
         public void Save()
+        {
+            SaveTo(FilePath);
+        }
+
+        public void SaveTo(string path)
         {
             var sb = new StringBuilder();
             sb.Append("{\n");
@@ -100,20 +119,28 @@ namespace VoxlDisplay
             sb.Append("  \"readOnly\": " + (ReadOnly ? "true" : "false") + ",\n");
             sb.Append("  \"password\": \"" + Password + "\",\n");
             sb.Append("  \"port\": " + Port + ",\n");
+            sb.Append("  \"name\": \"" + Name.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\",\n");
+            sb.Append("  \"device\": \"" + Device + "\",\n");
+            sb.Append("  \"priority\": \"" + Priority + "\",\n");
+            sb.Append("  \"advanced\": " + (Advanced ? "true" : "false") + ",\n");
             sb.Append("  \"voxlPath\": \"" + VoxlPath.Replace("\\", "\\\\") + "\",\n");
             sb.Append("  \"addr\": \"" + Addr + "\"\n");
             sb.Append("}\n");
-            File.WriteAllText(FilePath, sb.ToString());
+            File.WriteAllText(path, sb.ToString());
         }
 
         public static Settings Load()
         {
+            return LoadFrom(FilePath);
+        }
+
+        public static Settings LoadFrom(string path)
+        {
             var s = new Settings();
             try
             {
-                string p = FilePath;
-                if (!File.Exists(p)) return s;
-                string t = File.ReadAllText(p);
+                if (!File.Exists(path)) return s;
+                string t = File.ReadAllText(path);
                 s.Resolution = ReadString(t, "resolution", s.Resolution);
                 s.ScalePercent = ReadInt(t, "scalePercent", s.ScalePercent);
                 s.Quality = ReadString(t, "quality", s.Quality);
@@ -127,8 +154,19 @@ namespace VoxlDisplay
                 s.ReadOnly = ReadBool(t, "readOnly", s.ReadOnly);
                 s.Password = ReadString(t, "password", s.Password);
                 s.Port = ReadInt(t, "port", s.Port);
+                s.Name = ReadString(t, "name", s.Name);
+                s.Device = ReadString(t, "device", s.Device);
+                s.Priority = ReadString(t, "priority", s.Priority);
+                s.Advanced = ReadBool(t, "advanced", s.Advanced);
                 s.VoxlPath = ReadString(t, "voxlPath", s.VoxlPath);
                 s.Addr = ReadString(t, "addr", s.Addr);
+                // Settings written before simple mode existed belong to an advanced user:
+                // keep their resolution as the target panel and do not hide their fields.
+                if (t.IndexOf("\"device\"", StringComparison.Ordinal) < 0)
+                {
+                    s.Device = s.Resolution;
+                    s.Advanced = true;
+                }
             }
             catch { }
             return s;
@@ -346,6 +384,18 @@ namespace VoxlDisplay
         private readonly Button _reset = new FlatButton();
         private readonly Button _reload = new FlatButton();
         private readonly Button _install = new FlatButton();
+        private readonly Button _presets = new FlatButton();
+        private readonly Button _smooth = new FlatButton();
+        private readonly Button _balanced = new FlatButton();
+        private readonly Button _sharp = new FlatButton();
+        private readonly Button _recommend = new FlatButton();
+        private readonly ComboBox _target = new ComboBox();
+        private readonly Label _summary = new Label();
+        private readonly Label _nameLabel = new Label();
+        private readonly TextBox _name = new TextBox();
+        private readonly CheckBox _advanced = new FlatCheck();
+        private readonly List<Control> _simpleOnly = new List<Control>();
+        private readonly List<Control> _advancedOnly = new List<Control>();
         private readonly NotifyIcon _tray;
         private Process _voxl;
         private bool _busy;
@@ -355,6 +405,11 @@ namespace VoxlDisplay
         private bool _syncing;
 
         private static readonly string[] QualityNames = { "Low", "Balanced", "High", "Maximum", "Custom" };
+        // Native panels people actually point at a second monitor. The app downscales from
+        // these, it does not need a mode list of its own.
+        private static readonly string[] DeviceSizes = {
+            "1280x800", "1920x1200", "2560x1600", "1920x1080", "2560x1440",
+            "2000x1200", "2160x1440", "2732x2048", "2360x1640", "2048x1536" };
         // What the user picks, and the x264 names those entries stand for.
         private static readonly string[] PresetNames = {
             "Fastest (ultrafast)", "Fast (superfast)", "Balanced (veryfast)", "Best quality (faster)" };
@@ -375,7 +430,7 @@ namespace VoxlDisplay
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(640, 742);
+            ClientSize = new Size(640, 806);
             BackColor = Color.FromArgb(23, 23, 27);
             ForeColor = Color.FromArgb(235, 235, 240);
             Font = new Font("Segoe UI", 9.75f);
@@ -394,33 +449,89 @@ namespace VoxlDisplay
             sub.Location = new Point(28, 52);
             Controls.Add(sub);
 
+            _advanced.Text = "Advanced";
+            _advanced.Location = new Point(486, 22);
+            _advanced.Size = new Size(126, 26);
+            _advanced.ForeColor = Color.FromArgb(170, 170, 180);
+            _advanced.Checked = false;
+            _advanced.CheckedChanged += delegate { SetMode(_advanced.Checked, true); };
+            Controls.Add(_advanced);
+
             // Every section: heading, its line, then 30 px to the first label and 30 to
             // its field. The same rhythm everywhere is what stops it looking crammed.
             Section("Display", 88);
 
-            AddLabel("Resolution", 26, 120);
+            _advancedOnly.Add(AddLabel("Resolution", 26, 120));
             Combo(_resolution, 26, 152, 260);
             _resolution.DropDownStyle = ComboBoxStyle.DropDown;
             Controls.Add(_resolution);
+            _advancedOnly.Add(_resolution);
 
-            AddLabel("Scaling", 306, 120);
+            _advancedOnly.Add(AddLabel("Scaling", 306, 120));
             Combo(_scale, 306, 152, 260);
             Controls.Add(_scale);
+            _advancedOnly.Add(_scale);
+
+            // Simple mode: the panel the tablet actually has, and what to favour.
+            var devLabel = AddLabel("Your device (native panel)", 26, 120);
+            Combo(_target, 26, 152, 260);
+            _target.DropDownStyle = ComboBoxStyle.DropDown;
+            foreach (string d in DeviceSizes) _target.Items.Add(d);
+            _target.SelectedIndexChanged += delegate
+            {
+                if (_syncing) return;
+                _s.Device = _target.Text;
+                ApplySimple();
+            };
+            Controls.Add(_target);
+            _simpleOnly.Add(devLabel);
+            _simpleOnly.Add(_target);
+
+            var prio = AddLabel("Priority", 306, 120);
+            PriorityButton(_smooth, "Smoother", 306, "smooth");
+            PriorityButton(_balanced, "Balanced", 396, "balanced");
+            PriorityButton(_sharp, "Sharper", 486, "sharp");
+            _simpleOnly.Add(prio);
+            _simpleOnly.Add(_smooth);
+            _simpleOnly.Add(_balanced);
+            _simpleOnly.Add(_sharp);
 
             Section("Stream", 206);
 
-            AddLabel("Quality", 26, 238);
+            _advancedOnly.Add(AddLabel("Quality", 26, 238));
             Combo(_quality, 26, 270, 260);
             foreach (string q in QualityNames) _quality.Items.Add(q);
             _quality.SelectedIndexChanged += QualityChanged;
             Controls.Add(_quality);
+            _advancedOnly.Add(_quality);
 
-            AddLabel("Encoder preset", 306, 238);
+            _advancedOnly.Add(AddLabel("Encoder preset", 306, 238));
             Combo(_preset, 306, 270, 260);
             foreach (string p in PresetNames) _preset.Items.Add(p);
             Controls.Add(_preset);
+            _advancedOnly.Add(_preset);
 
-            AddLabel("CRF", 26, 322);
+            _summary.Text = "";
+            _summary.Location = new Point(26, 238);
+            _summary.Size = new Size(600, 54);
+            _summary.ForeColor = Color.FromArgb(150, 150, 160);
+            Controls.Add(_summary);
+            _simpleOnly.Add(_summary);
+
+            Button(_recommend, "Recommend", 26, 303, Color.FromArgb(48, 48, 58), 150);
+            _recommend.Size = new Size(150, 30);
+            _recommend.Click += delegate { Recommend(); };
+            _simpleOnly.Add(_recommend);
+
+            var simpleHint = new Label();
+            simpleHint.Text = "Changes apply on the next Start; a running stream is not restarted.";
+            simpleHint.AutoSize = true;
+            simpleHint.Location = new Point(26, 348);
+            simpleHint.ForeColor = Color.FromArgb(110, 110, 120);
+            Controls.Add(simpleHint);
+            _simpleOnly.Add(simpleHint);
+
+            _advancedOnly.Add(AddLabel("CRF", 26, 322));
             var crfHelp = new HelpDot();
             crfHelp.Location = new Point(63, 325);
             crfHelp.Size = new Size(18, 18);
@@ -438,19 +549,24 @@ namespace VoxlDisplay
             crfHelp.BringToFront();
             Number(_crf, 26, 354, 110, 10, 40);
             Controls.Add(_crf);
+            _advancedOnly.Add(_crf);
+            _advancedOnly.Add(crfHelp);
 
-            AddLabel("Max Mbps", 156, 322);
+            _advancedOnly.Add(AddLabel("Max Mbps", 156, 322));
             Number(_maxMbps, 156, 354, 130, 5, 2000);
             Controls.Add(_maxMbps);
+            _advancedOnly.Add(_maxMbps);
 
-            AddLabel("FPS", 306, 322);
+            _advancedOnly.Add(AddLabel("FPS", 306, 322));
             Combo(_fps, 306, 354, 110);
             foreach (int f in new[] { 30, 50, 60, 90, 120 }) _fps.Items.Add(f.ToString());
             Controls.Add(_fps);
+            _advancedOnly.Add(_fps);
 
-            AddLabel("Threads", 436, 322);
+            _advancedOnly.Add(AddLabel("Threads", 436, 322));
             Number(_threads, 436, 354, 130, 1, 32);
             Controls.Add(_threads);
+            _advancedOnly.Add(_threads);
 
             Check(_clipboard, "Clipboard", 26, 410, 132);
             Check(_audio, "Audio", 176, 410, 96);
@@ -478,27 +594,42 @@ namespace VoxlDisplay
             who.ForeColor = Color.FromArgb(120, 160, 140);
             Controls.Add(who);
 
-            Button(_start, "Start", 26, 606, Color.FromArgb(58, 158, 96), 132);
+            _nameLabel.Text = "Name";
+            _nameLabel.AutoSize = true;
+            _nameLabel.Location = new Point(26, 601);
+            _nameLabel.ForeColor = Color.FromArgb(170, 170, 180);
+            Controls.Add(_nameLabel);
+            _name.Location = new Point(80, 597);
+            _name.Size = new Size(240, 26);
+            _name.BackColor = Color.FromArgb(35, 35, 42);
+            _name.ForeColor = Color.White;
+            _name.BorderStyle = BorderStyle.FixedSingle;
+            _name.TextChanged += delegate { UpdateTitle(); };
+            Controls.Add(_name);
+
+            Button(_start, "Start", 26, 636, Color.FromArgb(58, 158, 96), 112);
             _start.Click += StartClicked;
-            Button(_stop, "Stop", 168, 606, Color.FromArgb(48, 48, 58), 132);
+            Button(_stop, "Stop", 148, 636, Color.FromArgb(48, 48, 58), 112);
             _stop.Click += StopClicked;
-            Button(_reset, "Defaults", 310, 606, Color.FromArgb(48, 48, 58), 132);
+            Button(_presets, "Presets", 270, 636, Color.FromArgb(48, 48, 58), 112);
+            _presets.Click += delegate { PresetsClicked(); };
+            Button(_reset, "Defaults", 392, 636, Color.FromArgb(48, 48, 58), 112);
             _reset.Click += ResetClicked;
-            Button(_reload, "Reload", 452, 606, Color.FromArgb(48, 48, 58), 132);
+            Button(_reload, "Reload", 514, 636, Color.FromArgb(48, 48, 58), 112);
             _reload.Click += delegate { LoadDisplays(); ApplySettings(); };
 
-            Button(_install, "Install driver", 400, 686, Color.FromArgb(58, 158, 96), 184);
+            Button(_install, "Install driver", 400, 742, Color.FromArgb(58, 158, 96), 184);
             _install.Size = new Size(184, 32);
             _install.Click += InstallDriverClicked;
 
             _status.Text = "stopped";
-            _status.Location = new Point(26, 664);
+            _status.Location = new Point(26, 694);
             _status.Size = new Size(560, 22);
             _status.ForeColor = Color.FromArgb(150, 150, 160);
             Controls.Add(_status);
 
             _hint.Text = "";
-            _hint.Location = new Point(26, 690);
+            _hint.Location = new Point(26, 720);
             _hint.Size = new Size(360, 40);
             _hint.ForeColor = Color.FromArgb(110, 110, 120);
             Controls.Add(_hint);
@@ -526,6 +657,7 @@ namespace VoxlDisplay
 
             LoadDisplays();
             ApplySettings();
+            SetMode(_s.Advanced, false);
             ScaleToDpi();
             UpdateAccess();
             FormClosing += OnClosing;
@@ -591,7 +723,7 @@ namespace VoxlDisplay
             if (f <= 1.001f) return;
             SuspendLayout();
             Scale(new SizeF(f, f));
-            ClientSize = new Size((int)(640 * f), (int)(742 * f));
+            ClientSize = new Size((int)(640 * f), (int)(806 * f));
             ResumeLayout(true);
         }
 
@@ -609,16 +741,218 @@ namespace VoxlDisplay
                 float f = GetDpiForWindow(Handle) / 96f;
                 SuspendLayout();
                 Scale(new SizeF(f, f));
-                ClientSize = new Size((int)(640 * f), (int)(742 * f));
+                ClientSize = new Size((int)(640 * f), (int)(806 * f));
                 ResumeLayout(true);
             }
             if (!File.Exists(_s.VoxlPath))
                 _hint.Text = "voxl.exe was not found next to this app. Put both in one folder.";
         }
 
-        // A quiet section header with a hairline under it.
-        private void Section(string text, int y)
+        private void PriorityButton(Button b, string text, int x, string key)
         {
+            b.Text = text;
+            b.Location = new Point(x, 152);
+            b.Size = new Size(82, 26);
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 0;
+            b.ForeColor = Color.White;
+            b.Click += delegate
+            {
+                if (_syncing) return;
+                _s.Priority = key;
+                PaintPriority();
+                ApplySimple();
+            };
+            Controls.Add(b);
+        }
+
+        private void PaintPriority()
+        {
+            Button[] all = { _smooth, _balanced, _sharp };
+            string[] keys = { "smooth", "balanced", "sharp" };
+            for (int i = 0; i < all.Length; i++)
+                all[i].BackColor = keys[i] == _s.Priority
+                    ? Color.FromArgb(58, 158, 96) : Color.FromArgb(48, 48, 58);
+        }
+
+        // Simple mode hides the encoder jargon and derives it from the panel and a priority.
+        private void SetMode(bool advanced, bool save)
+        {
+            foreach (Control c in _advancedOnly) c.Visible = advanced;
+            foreach (Control c in _simpleOnly) c.Visible = !advanced;
+            if (_advanced.Checked != advanced) _advanced.Checked = advanced;
+            _s.Advanced = advanced;
+            if (save) _s.Save();
+            if (!advanced) ApplySimple();
+            UpdateTitle();
+        }
+
+        private void ApplySimple()
+        {
+            if (_resolution.Items.Count == 0)
+            {
+                _summary.Text = "No virtual display yet. Press Start and the app connects it.";
+                return;
+            }
+
+            int dw = 1920, dh = 1200;
+            Display.ParseMode(_target.Text, out dw, out dh);
+            if (dw <= 0 || dh <= 0) { dw = 1920; dh = 1200; }
+
+            bool smooth = _s.Priority == "smooth";
+            bool sharp = _s.Priority == "sharp";
+            double want = (double)dw / dh;
+            double budget = dw * (double)dh * (smooth ? 0.55 : 1.0);
+
+            string best = null;
+            double bestScore = double.MaxValue;
+            foreach (object o in _resolution.Items)
+            {
+                int w, h;
+                if (!Display.ParseMode(o.ToString(), out w, out h)) continue;
+                if (Math.Abs((double)w / h - want) > want * 0.03) continue;
+                double area = (double)w * h;
+                if (area > budget) continue;
+                double score = Math.Abs(area - budget);
+                if (score < bestScore) { bestScore = score; best = o.ToString(); }
+            }
+            // A driver that does not advertise the panel's aspect: keep what is there.
+            if (best == null)
+                best = _resolution.Items.Contains(_s.Resolution) ? _s.Resolution : _resolution.Items[0].ToString();
+
+            int mw, mh;
+            Display.ParseMode(best, out mw, out mh);
+            _resolution.Text = best;
+
+            // Aim at roughly 1280 logical pixels, snapped to a scale the driver offers.
+            int wantScale = (int)Math.Round(mw / 1280.0 * 100);
+            int bi = 0, bd = int.MaxValue;
+            for (int i = 0; i < _scale.Items.Count; i++)
+            {
+                int pct;
+                if (!int.TryParse(_scale.Items[i].ToString().TrimEnd('%'), out pct)) continue;
+                int d = Math.Abs(pct - wantScale);
+                if (d < bd) { bd = d; bi = i; }
+            }
+            if (_scale.Items.Count > 0) _scale.SelectedIndex = bi;
+            int scalePct = 0;
+            if (_scale.Items.Count > 0)
+                int.TryParse(_scale.Items[_scale.SelectedIndex].ToString().TrimEnd('%'), out scalePct);
+
+            int fps = sharp ? 30 : 60;
+            int crf = smooth ? 24 : (sharp ? 17 : 20);
+
+            _syncing = true;
+            _fps.SelectedItem = fps.ToString();
+            if (_fps.SelectedIndex < 0) _fps.SelectedIndex = _fps.Items.Count - 1;
+            _crf.Value = crf;
+            _maxMbps.Value = 60;
+            _threads.Value = Math.Max(1, Math.Min(4, Environment.ProcessorCount / 4));
+            _preset.SelectedIndex = 0;
+            _quality.SelectedItem = "Custom";
+            _syncing = false;
+
+            _summary.Text = best + " at " + scalePct + " % - " +
+                fps + " fps, CRF " + crf + ", " + _threads.Value + " threads.\n" +
+                "Smoother: half the pixels at 60 fps. Sharper: panel pixels at 30 fps.";
+        }
+
+        // Picks a priority from the host hardware and a quick look at the network.
+        private void Recommend()
+        {
+            int cores = Environment.ProcessorCount;
+            string gpu = GpuName();
+            int rtt = GatewayRtt();
+            string why;
+
+            if (rtt < 0) { _s.Priority = "balanced"; why = "the network did not answer, so Balanced is the safe pick"; }
+            else if (rtt <= 15) { _s.Priority = "balanced"; why = "the network answers in " + rtt + " ms, native resolution at 60 fps is fine"; }
+            else if (rtt <= 35) { _s.Priority = "smooth"; why = "the network answers in " + rtt + " ms, half resolution keeps it smooth"; }
+            else { _s.Priority = "smooth"; why = "the network answers in " + rtt + " ms, which is slow: half resolution"; }
+
+            if (cores < 4) { _s.Priority = "smooth"; why += "; only " + cores + " cores, so fewer pixels"; }
+            PaintPriority();
+            ApplySimple();
+
+            MessageBox.Show(this,
+                "Hardware: " + cores + " cores, " + gpu + ".\n" +
+                "Network: gateway round trip " + (rtt < 0 ? "unavailable" : rtt + " ms") + ".\n\n" +
+                "Chosen priority: " + _s.Priority + " (" + why + ").\n\n" +
+                "Change it with the three buttons if the picture or the smoothness is not right.",
+                "Recommended settings", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private static string GpuName()
+        {
+            try
+            {
+                foreach (System.Management.ManagementObject o in new System.Management.ManagementObjectSearcher(
+                    "SELECT Name FROM Win32_VideoController").Get())
+                {
+                    string n = o["Name"] as string;
+                    if (!string.IsNullOrEmpty(n) && n.IndexOf("Virtual", StringComparison.OrdinalIgnoreCase) < 0)
+                        return n;
+                }
+            }
+            catch { }
+            return "video adapter";
+        }
+
+        private static int GatewayRtt()
+        {
+            try
+            {
+                string gw = null;
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    foreach (var g in ni.GetIPProperties().GatewayAddresses)
+                        if (g.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                            gw = g.Address.ToString();
+                }
+                if (gw == null) return -1;
+                using (var p = new System.Net.NetworkInformation.Ping())
+                {
+                    long sum = 0; int ok = 0;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        var r = p.Send(gw, 800);
+                        if (r.Status == System.Net.NetworkInformation.IPStatus.Success) { sum += r.RoundtripTime; ok++; }
+                    }
+                    return ok == 0 ? -1 : (int)(sum / ok);
+                }
+            }
+            catch { return -1; }
+        }
+
+        private void UpdateTitle()
+        {
+            string n = _name.Text.Trim();
+            _s.Name = n.Length == 0 ? "#1" : n;
+            Text = "Voxl Display - " + _s.Name;
+            try { _tray.Text = _s.Name + (IsLive() ? " - streaming" : " - stopped"); } catch { }
+        }
+
+        private bool IsLive()
+        {
+            try { return _voxl != null && !_voxl.HasExited; } catch { return false; }
+        }
+
+        private void PresetsClicked()
+        {
+            using (var f = new PresetForm(_s))
+            {
+                if (f.ShowDialog(this) == DialogResult.OK && f.Chosen != null)
+                {
+                    _s.CopyFrom(f.Chosen);
+                    ApplySettings();
+                    _s.Save();
+                }
+            }
+        }
+
+        // A quiet section header with a hairline under it.
+        private void Section(string text, int y)        {
             var l = new Label();
             l.Text = text.ToUpperInvariant();
             l.Font = new Font("Segoe UI Semibold", 8.25f);
@@ -634,7 +968,7 @@ namespace VoxlDisplay
             Controls.Add(line);
         }
 
-        private void AddLabel(string text, int x, int y)
+        private Label AddLabel(string text, int x, int y)
         {
             var l = new Label();
             l.Text = text;
@@ -642,6 +976,7 @@ namespace VoxlDisplay
             l.Location = new Point(x, y);
             l.ForeColor = Color.FromArgb(170, 170, 180);
             Controls.Add(l);
+            return l;
         }
 
         private static void Combo(ComboBox c, int x, int y, int w)
@@ -677,13 +1012,18 @@ namespace VoxlDisplay
             if (_device == null)
             {
                 // The stream settings still work without a display, so only the two lists
-                // that come from the driver stay empty, and the window says why.
-                _status.Text = "The virtual display is not attached.";
+                // that come from the driver stay empty. A driver that is installed but
+                // switched off (the normal state after a reboot) must not look missing.
+                bool installed = Display.DriverInstalled();
+                _install.Visible = !installed;
+                _status.Text = installed
+                    ? "The virtual display is switched off."
+                    : "The virtual display is not attached.";
                 _status.ForeColor = Color.FromArgb(220, 120, 120);
-                _hint.Text =
-                    "The driver is missing or was refused. Press Install driver; if that fails, " +
-                    "run diagnose.ps1 next to the app and send the output.";
-                _install.Visible = true;
+                _hint.Text = installed
+                    ? "Press Start: it switches the display on and connects it. No reinstall needed."
+                    : "The driver is missing or was refused. Press Install driver; if that fails, " +
+                      "run diagnose.ps1 next to the app and send the output.";
                 return;
             }
 
@@ -772,7 +1112,14 @@ namespace VoxlDisplay
             _audio.Checked = _s.Audio;
             _readOnly.Checked = _s.ReadOnly;
             _password.Text = _s.Password;
+            _name.Text = _s.Name;
+            if (_target.Items.Contains(_s.Device)) _target.SelectedItem = _s.Device;
+            else if (_target.Items.Count > 0) _target.SelectedIndex = 1;
+            PaintPriority();
             _syncing = false;
+            UpdateTitle();
+            // Simple mode always derives the stream from the panel and the priority.
+            if (!_s.Advanced) ApplySimple();
         }
 
         private static decimal Clamp(int v, NumericUpDown n)
@@ -1088,7 +1435,7 @@ namespace VoxlDisplay
             try
             {
                 bool live = _voxl != null && !_voxl.HasExited;
-                _tray.Text = live ? "Voxl Display - streaming" : "Voxl Display - stopped";
+                _tray.Text = _s.Name + (live ? " - streaming" : " - stopped");
             }
             catch { }
             _status.ForeColor = error ? Color.FromArgb(230, 130, 130) : Color.FromArgb(150, 150, 160);
@@ -1134,6 +1481,155 @@ namespace VoxlDisplay
     }
 
     // The QR code for the tablet: scan, no typing.
+    // A saved configuration is the same settings.json shape, kept in presets next to the
+    // app, so a preset can also be copied in by hand.
+    internal sealed class PresetForm : Form
+    {
+        private readonly Settings _current;
+        private readonly ListBox _list = new ListBox();
+        private readonly TextBox _name = new TextBox();
+        public Settings Chosen;
+
+        private static string Dir
+        {
+            get { return Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "presets"); }
+        }
+
+        public PresetForm(Settings current)
+        {
+            _current = current;
+            Text = "Presets";
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterParent;
+            ClientSize = new Size(380, 360);
+            BackColor = Color.FromArgb(23, 23, 27);
+            ForeColor = Color.FromArgb(235, 235, 240);
+            AutoScaleMode = AutoScaleMode.None;
+            Font = new Font("Segoe UI", 9f);
+
+            var hint = new Label();
+            hint.Text = "A preset stores the whole configuration.";
+            hint.AutoSize = true;
+            hint.Location = new Point(20, 16);
+            hint.ForeColor = Color.FromArgb(150, 150, 160);
+            Controls.Add(hint);
+
+            _list.Location = new Point(20, 44);
+            _list.Size = new Size(340, 160);
+            _list.BackColor = Color.FromArgb(35, 35, 42);
+            _list.ForeColor = Color.White;
+            _list.BorderStyle = BorderStyle.FixedSingle;
+            _list.SelectedIndexChanged += delegate
+            {
+                if (_list.SelectedItem != null) _name.Text = _list.SelectedItem.ToString();
+            };
+            Controls.Add(_list);
+
+            var nl = new Label();
+            nl.Text = "Name";
+            nl.AutoSize = true;
+            nl.Location = new Point(20, 216);
+            nl.ForeColor = Color.FromArgb(170, 170, 180);
+            Controls.Add(nl);
+
+            _name.Location = new Point(20, 238);
+            _name.Size = new Size(340, 26);
+            _name.BackColor = Color.FromArgb(35, 35, 42);
+            _name.ForeColor = Color.White;
+            _name.BorderStyle = BorderStyle.FixedSingle;
+            Controls.Add(_name);
+
+            Flat("Save", 20, 276, 100, delegate { SavePreset(); });
+            Flat("Load", 132, 276, 100, delegate { LoadPreset(); });
+            Flat("Delete", 244, 276, 116, delegate { DeletePreset(); });
+            Flat("Close", 244, 316, 116, delegate { Close(); });
+
+            Reload();
+        }
+
+        private void Flat(string text, int x, int y, int w, EventHandler onClick)
+        {
+            var b = new Button();
+            b.Text = text;
+            b.Location = new Point(x, y);
+            b.Size = new Size(w, 30);
+            b.FlatStyle = FlatStyle.Flat;
+            b.FlatAppearance.BorderSize = 0;
+            b.BackColor = Color.FromArgb(48, 48, 58);
+            b.ForeColor = Color.White;
+            b.Click += onClick;
+            Controls.Add(b);
+        }
+
+        private void Reload()
+        {
+            _list.Items.Clear();
+            try
+            {
+                Directory.CreateDirectory(Dir);
+                var names = new List<string>();
+                foreach (string f in Directory.GetFiles(Dir, "*.json"))
+                    names.Add(Path.GetFileNameWithoutExtension(f));
+                names.Sort(StringComparer.OrdinalIgnoreCase);
+                foreach (string n in names) _list.Items.Add(n);
+            }
+            catch { }
+            if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+        }
+
+        private static string SafeName(string raw)
+        {
+            var sb = new StringBuilder();
+            foreach (char c in raw.Trim())
+                sb.Append(char.IsLetterOrDigit(c) || c == ' ' || c == '-' || c == '_' ? c : '_');
+            string s = sb.ToString().Trim();
+            if (s.Length > 40) s = s.Substring(0, 40).Trim();
+            return s;
+        }
+
+        private void SavePreset()
+        {
+            string name = SafeName(_name.Text);
+            if (name.Length == 0)
+            {
+                MessageBox.Show(this, "Type a name first.", "Presets");
+                return;
+            }
+            try
+            {
+                Directory.CreateDirectory(Dir);
+                _current.SaveTo(Path.Combine(Dir, name + ".json"));
+                Reload();
+                _list.SelectedItem = name;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "Presets", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void LoadPreset()
+        {
+            if (_list.SelectedItem == null) return;
+            string path = Path.Combine(Dir, _list.SelectedItem + ".json");
+            Chosen = Settings.LoadFrom(path);
+            DialogResult = DialogResult.OK;
+            Close();
+        }
+
+        private void DeletePreset()
+        {
+            if (_list.SelectedItem == null) return;
+            string path = Path.Combine(Dir, _list.SelectedItem + ".json");
+            if (MessageBox.Show(this, "Delete \"" + _list.SelectedItem + "\"?", "Presets",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            try { File.Delete(path); } catch { }
+            Reload();
+        }
+    }
+
     internal sealed class QrForm : Form
     {
         public QrForm(string link, string password)

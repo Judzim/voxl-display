@@ -394,6 +394,7 @@ namespace VoxlDisplay
         private readonly Label _nameLabel = new Label();
         private readonly TextBox _name = new TextBox();
         private readonly CheckBox _advanced = new FlatCheck();
+        private readonly Label _scaleLabel;
         private readonly List<Control> _simpleOnly = new List<Control>();
         private readonly List<Control> _advancedOnly = new List<Control>();
         private readonly NotifyIcon _tray;
@@ -402,6 +403,7 @@ namespace VoxlDisplay
         private bool _quitting;
         private bool _exitAfterWork;
         private string _device;
+        private string _lastSimpleMode;
         private bool _syncing;
 
         private static readonly string[] QualityNames = { "Low", "Balanced", "High", "Maximum", "Custom" };
@@ -467,14 +469,14 @@ namespace VoxlDisplay
             Controls.Add(_resolution);
             _advancedOnly.Add(_resolution);
 
-            _advancedOnly.Add(AddLabel("Scaling", 306, 120));
+            // Scaling is shown in both modes: only the user knows how big the panel is.
+            _scaleLabel = AddLabel("Scaling", 306, 120);
             Combo(_scale, 306, 152, 260);
             Controls.Add(_scale);
-            _advancedOnly.Add(_scale);
 
             // Simple mode: the panel the tablet actually has, and what to favour.
             var devLabel = AddLabel("Your device (native panel)", 26, 120);
-            Combo(_target, 26, 152, 260);
+            Combo(_target, 26, 152, 210);
             _target.DropDownStyle = ComboBoxStyle.DropDown;
             foreach (string d in DeviceSizes) _target.Items.Add(d);
             _target.SelectedIndexChanged += delegate
@@ -487,10 +489,10 @@ namespace VoxlDisplay
             _simpleOnly.Add(devLabel);
             _simpleOnly.Add(_target);
 
-            var prio = AddLabel("Priority", 306, 120);
-            PriorityButton(_smooth, "Smoother", 306, "smooth");
-            PriorityButton(_balanced, "Balanced", 396, "balanced");
-            PriorityButton(_sharp, "Sharper", 486, "sharp");
+            var prio = AddLabel("Priority", 346, 120);
+            PriorityButton(_smooth, "Smoother", 346, 78, "smooth");
+            PriorityButton(_balanced, "Balanced", 428, 78, "balanced");
+            PriorityButton(_sharp, "Sharper", 510, 78, "sharp");
             _simpleOnly.Add(prio);
             _simpleOnly.Add(_smooth);
             _simpleOnly.Add(_balanced);
@@ -518,7 +520,7 @@ namespace VoxlDisplay
             Controls.Add(_summary);
             _simpleOnly.Add(_summary);
 
-            Button(_recommend, "Recommend", 26, 303, Color.FromArgb(48, 48, 58), 150);
+            Button(_recommend, "Analyze", 26, 303, Color.FromArgb(48, 48, 58), 150);
             _recommend.Size = new Size(150, 30);
             _recommend.Click += delegate { Recommend(); };
             _simpleOnly.Add(_recommend);
@@ -748,11 +750,11 @@ namespace VoxlDisplay
                 _hint.Text = "voxl.exe was not found next to this app. Put both in one folder.";
         }
 
-        private void PriorityButton(Button b, string text, int x, string key)
+        private void PriorityButton(Button b, string text, int x, int width, string key)
         {
             b.Text = text;
             b.Location = new Point(x, 152);
-            b.Size = new Size(82, 26);
+            b.Size = new Size(width, 26);
             b.FlatStyle = FlatStyle.Flat;
             b.FlatAppearance.BorderSize = 0;
             b.ForeColor = Color.White;
@@ -780,6 +782,20 @@ namespace VoxlDisplay
         {
             foreach (Control c in _advancedOnly) c.Visible = advanced;
             foreach (Control c in _simpleOnly) c.Visible = !advanced;
+            // The scaling combo is shared: wide in advanced, squeezed between the device
+            // and the priority buttons in simple mode.
+            if (advanced)
+            {
+                _scale.Location = new Point(306, 152);
+                _scale.Size = new Size(260, 26);
+                _scaleLabel.Location = new Point(306, 120);
+            }
+            else
+            {
+                _scale.Location = new Point(246, 152);
+                _scale.Size = new Size(90, 26);
+                _scaleLabel.Location = new Point(246, 120);
+            }
             if (_advanced.Checked != advanced) _advanced.Checked = advanced;
             _s.Advanced = advanced;
             if (save) _s.Save();
@@ -824,17 +840,22 @@ namespace VoxlDisplay
             Display.ParseMode(best, out mw, out mh);
             _resolution.Text = best;
 
-            // Aim at roughly 1280 logical pixels, snapped to a scale the driver offers.
-            int wantScale = (int)Math.Round(mw / 1280.0 * 100);
-            int bi = 0, bd = int.MaxValue;
-            for (int i = 0; i < _scale.Items.Count; i++)
+            // Suggest a scale only when the mode changes. Once the user moves the combo,
+            // that is their decision and a refresh must not undo it.
+            if (best != _lastSimpleMode)
             {
-                int pct;
-                if (!int.TryParse(_scale.Items[i].ToString().TrimEnd('%'), out pct)) continue;
-                int d = Math.Abs(pct - wantScale);
-                if (d < bd) { bd = d; bi = i; }
+                _lastSimpleMode = best;
+                int wantScale = (int)Math.Round(mw / 1280.0 * 100);
+                int bi = 0, bd = int.MaxValue;
+                for (int i = 0; i < _scale.Items.Count; i++)
+                {
+                    int pct;
+                    if (!int.TryParse(_scale.Items[i].ToString().TrimEnd('%'), out pct)) continue;
+                    int d = Math.Abs(pct - wantScale);
+                    if (d < bd) { bd = d; bi = i; }
+                }
+                if (_scale.Items.Count > 0) _scale.SelectedIndex = bi;
             }
-            if (_scale.Items.Count > 0) _scale.SelectedIndex = bi;
             int scalePct = 0;
             if (_scale.Items.Count > 0)
                 int.TryParse(_scale.Items[_scale.SelectedIndex].ToString().TrimEnd('%'), out scalePct);

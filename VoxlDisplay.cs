@@ -26,6 +26,12 @@ namespace VoxlDisplay
         {
             try { SetProcessDPIAware(); } catch { }
 
+            // The only HTTPS this process talks is its own voxl on 127.0.0.1, which uses a
+            // self-signed certificate. Trusting it here does not widen anything else.
+            System.Net.ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
+            // .NET Framework still starts at TLS 1.0 by default; voxl speaks 1.2 and up.
+            try { System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12; } catch { }
+
             // --device on|off switches the virtual monitor at the device level. The window
             // uses the same call for Stop, and it is handy from a script.
             var argv = Environment.GetCommandLineArgs();
@@ -46,6 +52,27 @@ namespace VoxlDisplay
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+            // One window per install. A second copy shares settings.json, the same port and
+            // kills every voxl process on Start, so it would silently break the first one.
+            // Two screens are two folders with their own port and name, not two copies here.
+            bool created;
+            try
+            {
+                string key = Application.ExecutablePath.ToLowerInvariant();
+                using (var sha = System.Security.Cryptography.SHA1.Create())
+                    key = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(key))).Replace("-", "");
+                _single = new System.Threading.Mutex(true, "VoxlDisplay-" + key, out created);
+            }
+            catch { created = true; }
+            if (!created)
+            {
+                MessageBox.Show("Voxl Display is already running from this folder.\n\n" +
+                    "Use its icon in the notification area to open the window.",
+                    "Voxl Display", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
             Application.ThreadException += delegate(object s, System.Threading.ThreadExceptionEventArgs e)
             {
                 MessageBox.Show(e.Exception.Message, "Voxl Display", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -56,6 +83,8 @@ namespace VoxlDisplay
                 MessageBox.Show(ex.Message, "Voxl Display", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
+
+        private static System.Threading.Mutex _single;
     }
 
     // Settings live in settings.json next to the exe; a hand written reader keeps the app
@@ -398,6 +427,11 @@ namespace VoxlDisplay
         private readonly List<Control> _simpleOnly = new List<Control>();
         private readonly List<Control> _advancedOnly = new List<Control>();
         private readonly NotifyIcon _tray;
+        private readonly Timer _live = new Timer();
+        private bool _liveBusy;
+        private bool _wasLive;
+        private long _lastEncoded;
+        private DateTime _lastSample = DateTime.MinValue;
         private Process _voxl;
         private bool _busy;
         private bool _quitting;
@@ -656,6 +690,12 @@ namespace VoxlDisplay
             };
             _tray.DoubleClick += delegate { Restore(); };
             _tray.Visible = true;
+
+            // While the stream runs, sample voxl's own stats so the window can say what the
+            // link is really delivering instead of leaving the user to guess.
+            _live.Interval = 3000;
+            _live.Tick += delegate { LiveTick(); };
+            _live.Start();
 
             LoadDisplays();
             ApplySettings();
@@ -1150,6 +1190,7 @@ namespace VoxlDisplay
             _password.Text = _s.Password;
             _name.Text = _s.Name;
             if (_target.Items.Contains(_s.Device)) _target.SelectedItem = _s.Device;
+            else if (!string.IsNullOrEmpty(_s.Device)) _target.Text = _s.Device;
             else if (_target.Items.Count > 0) _target.SelectedIndex = 1;
             PaintPriority();
             _syncing = false;
@@ -1238,9 +1279,85 @@ namespace VoxlDisplay
         // shows only what is usable now.
         private void UpdateAccess()
         {
-            bool running = _voxl != null && !_voxl.HasExited;
+            bool running = IsLive();
             _qr.Visible = running;
             _copy.Visible = running;
+            if (running) _lastSample = DateTime.MinValue;
+            else if (_wasLive) _hint.Text = ReadyText();
+            _wasLive = running;
+        }
+
+        // Reads voxl's own counters from localhost; the numbers answer "why is it laggy".
+        private void LiveTick()
+        {
+            if (!IsLive() || _liveBusy) return;
+            _liveBusy = true;
+            string url = "https://" + _s.Addr + ":" + _s.Port + "/stats?token=" + Uri.EscapeDataString(_s.Password);
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                string json = null;
+                try
+                {
+                    var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(url);
+                    req.Timeout = 1500;
+                    req.ReadWriteTimeout = 1500;
+                    using (var resp = req.GetResponse())
+                    using (var r = new StreamReader(resp.GetResponseStream()))
+                        json = r.ReadToEnd();
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        string log = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "live-error.log");
+                        if (!File.Exists(log)) File.WriteAllText(log, url + "\n" + ex);
+                    }
+                    catch { }
+                }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        _liveBusy = false;
+                        if (json != null && IsLive()) ShowLive(json);
+                    });
+                }
+                catch { _liveBusy = false; }
+            });
+        }
+
+        private void ShowLive(string json)
+        {
+            int delivered = JsonInt(json, "delivered_kbps");
+            int rtt = JsonInt(json, "min_rtt_ms");
+            long encoded = JsonInt(json, "encoded");
+            double fps = 0;
+            if (_lastSample != DateTime.MinValue && encoded >= _lastEncoded)
+            {
+                double secs = (DateTime.Now - _lastSample).TotalSeconds;
+                if (secs > 0.5) fps = (encoded - _lastEncoded) / secs;
+            }
+            _lastEncoded = encoded;
+            _lastSample = DateTime.Now;
+
+            if (json.IndexOf("\"clients\":[]", StringComparison.Ordinal) >= 0)
+            {
+                _hint.Text = "Live: no viewer connected.";
+                return;
+            }
+            string rate = fps >= 1 ? fps.ToString("0") + " fps" : "idle screen";
+            _hint.Text = "Live: " + (delivered / 1000.0).ToString("0.0") + " Mbps, " +
+                (rtt > 0 ? rtt + " ms RTT" : "RTT unknown") + ", " + rate + ".";
+        }
+
+        private static int JsonInt(string json, string key)
+        {
+            int i = json.IndexOf("\"" + key + "\":", StringComparison.Ordinal);
+            if (i < 0) return 0;
+            i += key.Length + 3;
+            int v = 0;
+            while (i < json.Length && json[i] >= '0' && json[i] <= '9') { v = v * 10 + (json[i] - '0'); i++; }
+            return v;
         }
 
         private void SetBusy(bool busy)

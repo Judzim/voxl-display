@@ -615,7 +615,7 @@ namespace VoxlDisplay
             _presets.Click += delegate { PresetsClicked(); };
             Button(_reset, "Defaults", 392, 636, Color.FromArgb(48, 48, 58), 112);
             _reset.Click += ResetClicked;
-            Button(_reload, "Reload", 514, 636, Color.FromArgb(48, 48, 58), 112);
+            Button(_reload, "Refresh", 514, 636, Color.FromArgb(48, 48, 58), 112);
             _reload.Click += delegate { LoadDisplays(); ApplySettings(); };
 
             Button(_install, "Install driver", 400, 742, Color.FromArgb(58, 158, 96), 184);
@@ -945,6 +945,8 @@ namespace VoxlDisplay
                 if (f.ShowDialog(this) == DialogResult.OK && f.Chosen != null)
                 {
                     _s.CopyFrom(f.Chosen);
+                    // the preset's name is the handiest name for this instance too
+                    if (!string.IsNullOrEmpty(f.ChosenName)) _s.Name = f.ChosenName;
                     ApplySettings();
                     _s.Save();
                 }
@@ -1035,8 +1037,21 @@ namespace VoxlDisplay
                 int pct = Display.ScalePercentFor(MonitorTag, i);
                 if (pct > 0) _scale.Items.Add(pct + "%");
             }
-            _hint.Text = "Display " + _device + " is ready.";
+            _hint.Text = ReadyText();
             _install.Visible = false;
+        }
+
+        // Users should not have to read \\.\DISPLAY11. Say what state the screen is in instead.
+        private string ReadyText()
+        {
+            if (_device == null) return "Virtual display is not connected.";
+            string mode = Display.CurrentMode(_device);
+            int at = mode.IndexOf('@');
+            if (at > 0) mode = mode.Substring(0, at);
+            int min, cur, max;
+            Display.GetScaleRange(MonitorTag, out min, out cur, out max);
+            int pct = Display.ScalePercentFor(MonitorTag, cur);
+            return "Virtual display ready: " + mode + (pct > 0 ? " at " + pct + " %." : ".");
         }
 
         // Runs the driver install that ships next to the app, so a machine where it failed
@@ -1078,7 +1093,7 @@ namespace VoxlDisplay
 
             LoadDisplays();
             ApplySettings();
-            if (_device != null) Status("driver installed, display " + _device + " is ready", false);
+            if (_device != null) Status("driver installed, display is ready", false);
         }
 
         private void ApplySettings()
@@ -1278,6 +1293,7 @@ namespace VoxlDisplay
                 ApplySettings();
                 _install.Visible = false;
                 if (!_busy && _status.Text.StartsWith("stopped")) _hint.Text = "Press Start to stream.";
+                else _hint.Text = ReadyText();
                 return;
             }
 
@@ -1489,6 +1505,7 @@ namespace VoxlDisplay
         private readonly ListBox _list = new ListBox();
         private readonly TextBox _name = new TextBox();
         public Settings Chosen;
+        public string ChosenName;
 
         private static string Dir
         {
@@ -1614,6 +1631,7 @@ namespace VoxlDisplay
         {
             if (_list.SelectedItem == null) return;
             string path = Path.Combine(Dir, _list.SelectedItem + ".json");
+            ChosenName = _list.SelectedItem.ToString();
             Chosen = Settings.LoadFrom(path);
             DialogResult = DialogResult.OK;
             Close();
